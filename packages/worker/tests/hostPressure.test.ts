@@ -4,6 +4,7 @@ import {
   classifyPressure,
   DEFAULT_PRESSURE_THRESHOLDS,
   HostPressureMonitor,
+  macMemoryUsedFromVmStat,
   OK_STATE,
   pressureCapability,
   thresholdsFromCritical,
@@ -17,6 +18,23 @@ describe("host pressure classifier", () => {
   it("derives warn limits from the critical ones", () => {
     expect(T).toMatchObject({ memoryWarnPct: 85, diskWarnPct: 90, diskWarnFreeGiB: 6, loadWarnPct: 300 });
     expect(DEFAULT_PRESSURE_THRESHOLDS).toEqual(T);
+  });
+
+  it("macOS memory counts inactive and speculative pages as available", () => {
+    const vmStat = [
+      "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
+      "Pages free:                          100000.",
+      "Pages active:                        400000.",
+      "Pages inactive:                      200000.",
+      "Pages speculative:                    50000.",
+      "Pages wired down:                    90000.",
+    ].join("\n");
+    const used = macMemoryUsedFromVmStat(vmStat, 16 * 1024 ** 3);
+    // 350000 available pages of 1M total pages ≈ 66.6% used, not 99%.
+    expect(used).not.toBeNull();
+    expect(used!).toBeGreaterThan(60);
+    expect(used!).toBeLessThan(75);
+    expect(macMemoryUsedFromVmStat("garbage", 1024)).toBeNull();
   });
 
   it("a calm host is ok", () => {

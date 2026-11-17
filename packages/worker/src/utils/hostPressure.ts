@@ -17,9 +17,11 @@
  * GOAT's host pressure monitor, no code was copied.
  */
 import { wenv } from "@fhara/config/worker";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statfsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { buildChildEnv } from "@/api/convex/lib/childEnv";
 
 export type PressureLevel = "ok" | "warn" | "critical";
 export type PressureResource = "memory" | "disk" | "load";
@@ -164,6 +166,36 @@ export function pressureCapability(state: PressureState): string | null {
 
 const GIB = 1024 ** 3;
 
+export function macMemoryUsedFromVmStat(out: string, totalBytes: number): number | null {
+  const pageSize = Number(/page size of (\d+) bytes/.exec(out)?.[1] ?? 16_384);
+  const pages = (label: string) => {
+    const match = new RegExp(`^${label}:\\s+([\\d,]+)`, "m").exec(out);
+    return match ? Number(match[1]!.replace(/,/g, "")) : 0;
+  };
+  const availableBytes = (pages("Pages free") + pages("Pages inactive") + pages("Pages speculative")) * pageSize;
+  if (totalBytes > 0 && availableBytes > 0) {
+    return Math.max(0, Math.min(100, (1 - availableBytes / totalBytes) * 100));
+  }
+  return null;
+}
+
+/**
+ * macOS: `os.freemem()` counts only truly free pages, so a machine with plenty
+ * of reclaimable cache reads 95–100% used and the gate gets stuck critical.
+ * `memory_pressure -Q` counts inactive/speculative pages as available; do the
+ * same here from `vm_stat`, which is cheap and available on every macOS host.
+ */
+export function macMemoryUsedPct(): number | null {
+  if (process.platform !== "darwin") return null;
+  try {
+    const out = execFileSync("vm_stat", [], { encoding: "utf8", timeout: 2_000, env: buildChildEnv() });
+    return macMemoryUsedFromVmStat(out, os.totalmem());
+  } catch {
+    // vm_stat unavailable: fall through to os.freemem
+  }
+  return null;
+}
+
 function memoryUsedPct(): number {
   // MemAvailable (Linux) counts reclaimable cache as free; os.freemem does not.
   try {
@@ -175,6 +207,8 @@ function memoryUsedPct(): number {
   } catch {
     // not Linux: fall through
   }
+  const mac = macMemoryUsedPct();
+  if (mac !== null) return mac;
   const total = os.totalmem();
   return total > 0 ? ((total - os.freemem()) / total) * 100 : 0;
 }
