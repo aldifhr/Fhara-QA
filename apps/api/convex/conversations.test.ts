@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { syncConversationThread } from "./lib/threadIndex";
 
@@ -59,18 +60,15 @@ async function setup() {
     });
     return { projectId, leadId, feId, disabledId, outsiderId };
   });
-  await t.mutation(api.projects.updateTeam, {
-    projectId: ids.projectId,
-    agentIds: [ids.leadId, ids.feId, ids.disabledId],
-  });
+  // Plan 068: updateTeam is a no-op — every enabled agent is on the global team.
   return { t, ...ids };
 }
 
-function participantRows(t: T, conversationId: string) {
+function participantRows(t: T, conversationId: Id<"conversations">) {
   return t.run(async (ctx) =>
     ctx.db
       .query("conversationParticipants")
-      .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId as any))
+      .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
       .collect()
   );
 }
@@ -103,7 +101,6 @@ describe("ensureForChat: resolve-or-create + seed", () => {
       const fe = await ctx.db.insert("agents", { name: "Frontend", role: "frontend developer", status: "idle", isEnabled: true });
       return { projectId, cto, general, fe };
     });
-    await t.mutation(api.projects.updateTeam, { projectId: ids.projectId, agentIds: [ids.cto, ids.general, ids.fe] });
     const conversationId = await t.mutation(internal.conversations.ensureForChat, { projectId: ids.projectId });
     expect(await t.query(api.conversations.getParticipants, { conversationId })).toHaveLength(0);
     const context = await t.query(internal.chatContext.getContext, { projectId: ids.projectId, conversationId });
@@ -176,24 +173,27 @@ describe("ensureForChat: resolve-or-create + seed", () => {
 });
 
 describe("participation gate: membership + enabled", () => {
-  test("addParticipant refuses non-members and disabled agents", async () => {
+  test("addParticipant refuses disabled agents and agents that no longer exist", async () => {
     const { t, projectId, outsiderId, disabledId } = await setup();
     const conversationId = await t.mutation(internal.conversations.ensureForChat, {
       projectId,
     });
 
-    await expect(
-      t.mutation(api.conversations.addParticipant, {
-        conversationId,
-        agentId: outsiderId,
-      })
-    ).rejects.toThrow(/not a member/);
+    // Plan 068: every enabled agent is a member of every project, so the only
+    // ineligible agents are disabled ones or ones that were deleted.
     await expect(
       t.mutation(api.conversations.addParticipant, {
         conversationId,
         agentId: disabledId,
       })
     ).rejects.toThrow(/disabled/);
+    await t.run((ctx) => ctx.db.delete(outsiderId));
+    await expect(
+      t.mutation(api.conversations.addParticipant, {
+        conversationId,
+        agentId: outsiderId,
+      })
+    ).rejects.toThrow(/Agent not found/);
   });
 
   test("removeParticipant soft-leaves; addParticipant rejoins the same row", async () => {
@@ -225,16 +225,18 @@ describe("participation gate: membership + enabled", () => {
     expect(rows.find((r) => r.agentId === leadId)?.leftAt).toBeUndefined();
   });
 
-  test("an empty team seeds nobody and the chat engine selects nobody", async () => {
+  test("no enabled agents seeds nobody and the chat engine selects nobody", async () => {
     const t = makeT();
     const projectId = await t.run(async (ctx) =>
       ctx.db.insert("projects", { name: "P", workspacePath: "/tmp/p" })
     );
+    // Plan 068: the team is global, so an "empty team" means no enabled agents.
     await t.run(async (ctx) =>
       ctx.db.insert("agents", {
         name: "Solo",
         role: "Engineer",
         status: "idle",
+        isEnabled: false,
       })
     );
 
@@ -251,7 +253,7 @@ describe("participation gate: membership + enabled", () => {
     });
     expect(withConversation.agents).toHaveLength(0);
 
-    // Fallback path: a preferred global agent is still gated by membership.
+    // Fallback path with no conversation: still no enabled agent to select.
     const fallback = await t.query(internal.chatContext.getContext, {
       projectId,
     });
@@ -429,10 +431,12 @@ describe("remove: deleting one project chat", () => {
 
 describe("registry read models (addendum §1)", () => {
   test("listByProject returns members without credential fields", async () => {
-    const { t, projectId, leadId, feId, disabledId } = await setup();
+    const { t, projectId, leadId, feId, outsiderId } = await setup();
 
     const members = await t.query(api.agents.listByProject, { projectId });
-    expect(members.map((m) => m._id)).toEqual([leadId, feId, disabledId]);
+    // Plan 068: the list is the global registry of enabled agents for every
+    // project; the disabled agent drops out.
+    expect(members.map((m) => m._id)).toEqual([leadId, feId, outsiderId]);
     for (const member of members) {
       expect("llmApiKey" in member).toBe(false);
       expect("llmApiKeyEnv" in member).toBe(false);
@@ -523,8 +527,8 @@ describe("registry read models (addendum §1)", () => {
   });
 });
 
-describe("a project with no agentIds runs with the fixed team", () => {
-  test("ensureForChat seeds nobody and chat context still has the QA agent (no 'No enabled agents')", async () => {
+describe("a project with no roster uses the global agent team", () => {
+  test("ensureForChat seeds nobody and chat context still has the enabled agents (no 'No enabled agents')", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {
       const cto = await ctx.db.insert("agents", { name: "CTO", role: "cto", status: "idle", isEnabled: true });
@@ -537,9 +541,10 @@ describe("a project with no agentIds runs with the fixed team", () => {
     const participants = await t.query(api.conversations.getParticipants, { conversationId });
     expect(participants).toHaveLength(0);
     const context = await t.query(internal.chatContext.getContext, { projectId: ids.projectId, conversationId });
-    // Plan 068: the fixed team is just QA; legacy roles are not in the roster.
+    // Plan 068: the team is global (every enabled agent), but the default
+    // selection is still one conversational, non-CTO agent.
     expect(context.agents.map((a: { _id: string }) => a._id)).toEqual([ids.qa]);
-    expect((context.team ?? []).map((a: { _id: string }) => a._id).sort()).toEqual([ids.qa].sort());
+    expect((context.team ?? []).map((a: { _id: string }) => a._id).sort()).toEqual([ids.cto, ids.qa].sort());
     // Without a conversation (legacy path) the same default answers.
     const legacy = await t.query(internal.chatContext.getContext, { projectId: ids.projectId });
     expect(legacy.agents.map((a: { _id: string }) => a._id)).toEqual([ids.qa]);

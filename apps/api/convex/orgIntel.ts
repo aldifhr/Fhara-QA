@@ -323,10 +323,6 @@ export const capacity = query({
       if (visible.get(e.projectId)) scoped.push(e);
     }
     let agents = await ctx.db.query("agents").take(AGENT_LIMIT);
-    if (project?.agentIds && project.agentIds.length > 0) {
-      const members = new Set(project.agentIds.map(String));
-      agents = agents.filter((a) => members.has(a._id as string));
-    }
     agents = agents.filter((a) => !(a.retiredAt && a.isEnabled === false));
     const view = buildCapacity(
       agents.map((a) => ({

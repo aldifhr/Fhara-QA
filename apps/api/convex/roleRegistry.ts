@@ -139,12 +139,7 @@ export const assignToProject = mutation({
           allowedTools: args.allowedTools,
           createdAt: Date.now(),
         });
-    // Dual-write to projects.agentIds — task validation + agents.listByProject
-    // read that column, so the two sources stay one membership set.
     const project = await ctx.db.get(args.projectId);
-    if (project && !(project.agentIds ?? []).includes(args.agentId)) {
-      await ctx.db.patch(project._id, { agentIds: [...(project.agentIds ?? []), args.agentId] });
-    }
     await recordAudit(ctx, {
       action: "project.assignAgent",
       target: `${agent.name} → ${project?.name ?? "project"}`,
@@ -166,11 +161,8 @@ export const removeFromProject = mutation({
     const rows = await ctx.db.query("projectAgents").withIndex("by_project_and_agent", (q) => q.eq("projectId", args.projectId).eq("agentId", args.agentId)).take(1);
     // Removing an assignment must not delete the organization-level member.
     if (rows[0]) await ctx.db.delete(rows[0]._id);
-    const project = await ctx.db.get(args.projectId);
-    if (project?.agentIds?.includes(args.agentId)) {
-      await ctx.db.patch(project._id, { agentIds: project.agentIds.filter((id) => id !== args.agentId) });
-    }
     if (rows[0]) {
+      const project = await ctx.db.get(args.projectId);
       const agent = await ctx.db.get(args.agentId);
       await recordAudit(ctx, {
         action: "project.unassignAgent",

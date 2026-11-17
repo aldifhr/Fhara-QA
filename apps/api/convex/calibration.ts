@@ -329,8 +329,7 @@ export const backfill = internalMutation({
       let agents = agentsByProject.get(task.projectId as string);
       if (!agents) {
         const project = await ctx.db.get(task.projectId);
-        const members = project?.agentIds && project.agentIds.length > 0 ? new Set(project.agentIds.map(String)) : null;
-        agents = allAgents.filter((a) => a.isEnabled !== false && !a.retiredAt && (!members || members.has(a._id as string)));
+        agents = allAgents.filter((a) => a.isEnabled !== false && !a.retiredAt);
         agentsByProject.set(task.projectId as string, agents);
       }
       const before = await ctx.db.query("decisions").withIndex("by_task", (q) => q.eq("taskId", task._id)).take(2000);

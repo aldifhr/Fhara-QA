@@ -1,22 +1,33 @@
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { effectiveTeamIds } from "./projectTeam";
+import schema from "../schema";
 
-const agent = (id: string, role: string, t: number) => ({ _id: id, role, _creationTime: t }) as any;
+const modules = import.meta.glob("../**/*.ts");
 
-describe("effectiveTeamIds", () => {
-  test("an explicit roster wins", () => {
-    expect(effectiveTeamIds(["a2" as any], [agent("a1", "cto", 1), agent("a2", "qa", 2)])).toEqual(["a2"]);
+async function seedAgents() {
+  const t = convexTest(schema, modules);
+  return t.run(async (ctx) => {
+    const cto = await ctx.db.insert("agents", { name: "CTO", role: "cto", status: "idle", isEnabled: true });
+    const qa = await ctx.db.insert("agents", { name: "QA", role: "qa", status: "idle", isEnabled: true });
+    const disabled = await ctx.db.insert("agents", { name: "Off", role: "reviewer", status: "idle", isEnabled: false });
+    return { cto, qa, disabled, all: await ctx.db.query("agents").collect() };
   });
-  test("no roster: the oldest agent per fixed role, in seed order, no retired or custom roles", () => {
-    const all = [
-      agent("qa", "qa", 5),
-      agent("cto", "CTO", 2),
-      agent("rev2", "reviewer", 9),
-      agent("rev", "reviewer", 3),
-      agent("lead", "lead", 1),
-      agent("custom", "data-scientist", 1),
-    ];
-    expect(effectiveTeamIds(undefined, all)).toEqual(["qa"]);
-    expect(effectiveTeamIds([], all)).toEqual(["qa"]);
+}
+
+describe("effectiveTeamIds (one global agent team)", () => {
+  test("the roster argument is ignored: every enabled agent is available to any project", async () => {
+    const { cto, qa, all } = await seedAgents();
+    expect(effectiveTeamIds(undefined, all)).toEqual([cto, qa]);
+    expect(effectiveTeamIds([], all)).toEqual([cto, qa]);
+    expect(effectiveTeamIds([qa], all)).toEqual([cto, qa]);
+  });
+
+  test("disabled agents are never in the team", async () => {
+    const { cto, qa, disabled, all } = await seedAgents();
+    expect(all).toHaveLength(3);
+    expect(effectiveTeamIds([disabled], all)).toEqual([cto, qa]);
+    expect(effectiveTeamIds(undefined, all)).not.toContain(disabled);
   });
 });

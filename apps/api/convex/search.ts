@@ -18,14 +18,8 @@ export const global = query({
       visibleProjects(ctx),
       ctx.db.query("tasks").order("desc").take(SEARCH_TASK_WINDOW),
     ]);
-    // Agents are scoped to the members of the visible projects, never a
-    // table-wide scan (an agent of a hidden project must not show up).
-    const memberIds = [
-      ...new Set(projects.flatMap((p) => (p.agentIds ?? []) as Id<"agents">[])),
-    ].slice(0, SEARCH_AGENT_WINDOW);
-    const agents = (await Promise.all(memberIds.map((id) => ctx.db.get(id)))).filter(
-      (a): a is Doc<"agents"> => a !== null
-    );
+    // QA fork: one global agent, no per-project membership.
+    const agents = await ctx.db.query("agents").take(SEARCH_AGENT_WINDOW);
     // Scoped to the projects the caller may see (core H5).
     const visible = new Set(projects.map((p) => p._id as string));
     const tasks = recentTasks.filter((t) => visible.has(t.projectId as string));
@@ -44,7 +38,7 @@ export const global = query({
         .slice(0, 8)
         .map((a) => ({
           ...projectAgentDoc(a),
-          projectId: projects.find((p) => (p.agentIds ?? []).includes(a._id))?._id ?? null,
+          projectId: projects[0]?._id ?? null,
         })),
     };
   },

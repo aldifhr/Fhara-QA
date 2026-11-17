@@ -14,7 +14,6 @@ import { CreateAgentModal } from "@/components/sidebar/AgentForms";
 import ConfirmDialog, { type ConfirmRequest } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toasts";
 import { agentName, agentRoleText } from "@/lib/agentRoles";
-import { projectMembers } from "@/lib/projectMembers";
 import { teamHeadline, teamLoaded } from "@/lib/teamHeadline";
 import { useHydrated } from "@/lib/useHydrated";
 import {
@@ -100,12 +99,11 @@ function TeamPage() {
     () => statusFromLeases(active, { projectId, otherProjects: "elsewhere", checkFirst: "review" }),
     [active, projectId],
   );
-  const memberIds = (project as { agentIds?: string[] } | null | undefined)?.agentIds;
   const agents = useMemo(() => {
-    const list = projectId ? projectMembers(allAgents, memberIds) : allAgents ?? [];
+    const list = allAgents ?? [];
     const word = (a: Agent): TeamStatusWord => status[a._id]?.status ?? "idle";
     return [...list].sort((a, b) => TEAM_STATUS_RANK[word(a)] - TEAM_STATUS_RANK[word(b)] || agentName(a).localeCompare(agentName(b)));
-  }, [allAgents, memberIds, projectId, status]);
+  }, [allAgents, status]);
   const busy = agents.filter((a) => status[a._id] && a.isEnabled !== false).length;
 
   const projectName = (project as { name?: string } | null | undefined)?.name;

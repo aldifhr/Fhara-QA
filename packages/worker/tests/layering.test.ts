@@ -56,6 +56,9 @@ const LAYERS: Record<string, number> = {
 /** apps/api modules that are pure TypeScript and safe at the foundation layer. */
 const SHARED_FOUNDATION = new Set([
   "convex/lib/roles",
+  // Pure child-env scrubbing helper (no Node imports), used by the host
+  // pressure sampler when it spawns `vm_stat` on macOS.
+  "convex/lib/childEnv",
   // Plan L3: pure task-brief helpers (types, caps, prompt section).
   "convex/lib/brief",
   // Skill v2: pure skill prompt helpers (PromptSkill type, budgets).

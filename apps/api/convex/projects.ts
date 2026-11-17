@@ -46,11 +46,6 @@ export const create = mutation({
     if (!name) throw new Error("Project name is required");
     const workspacePath = validateWorkspacePath(args.workspacePath);
 
-    for (const agentId of args.agentIds ?? []) {
-      const agent = await ctx.db.get(agentId);
-      if (!agent) throw new Error(`Agent not found: ${agentId}`);
-    }
-
     const viewerId = await getViewerId(ctx);
     // Settings → Projects / Source control: app-wide defaults for fields
     // the caller did not give.
@@ -61,7 +56,6 @@ export const create = mutation({
     const projectId = await ctx.db.insert("projects", {
       name,
       workspacePath,
-      ...(args.agentIds ? { agentIds: args.agentIds } : {}),
       ...(args.qaUrl ? { qaUrl: args.qaUrl.trim() } : {}),
       ...(args.devUrl ? { devUrl: args.devUrl.trim() } : {}),
       ...(viewerId ? { ownerId: viewerId } : {}),
@@ -86,24 +80,9 @@ export const updateTeam = mutation({
     agentIds: v.array(v.id("agents")),
   },
   handler: async (ctx, args) => {
-    const project = await assertProjectAccess(ctx, args.projectId);
-    const uniqueAgentIds = Array.from(new Set(args.agentIds));
-    for (const agentId of uniqueAgentIds) {
-      const agent = await ctx.db.get(agentId);
-      if (!agent) throw new Error(`Agent not found: ${agentId}`);
-    }
-    await ctx.db.patch(args.projectId, { agentIds: uniqueAgentIds });
-    const before = new Set(project.agentIds ?? []);
-    const added = uniqueAgentIds.filter((id) => !before.has(id)).length;
-    const removed = [...before].filter((id) => !uniqueAgentIds.includes(id)).length;
-    if (added || removed) {
-      await recordAudit(ctx, {
-        action: "project.team",
-        target: project.name,
-        projectId: args.projectId,
-        details: { changed: ["agentIds"], added, removed },
-      });
-    }
+    // QA fork (plan 068): every agent is global; project membership is gone.
+    // Kept as a no-op so old clients keep working.
+    await assertProjectAccess(ctx, args.projectId);
   },
 });
 

@@ -69,12 +69,10 @@ describe("agentTemplates functions", () => {
     expect(mine.systemPrompt).toContain("QA automation assistant");
   });
 
-  test("createAgentFromTemplate names, prefills and joins the project", async () => {
+  test("createAgentFromTemplate names and prefills the agent without project membership", async () => {
     const t = convexTest(schema, modules);
     await t.mutation(api.skills.seedDefaults, {});
-    const projectId = await t.run((ctx) =>
-      ctx.db.insert("projects", { name: "P", workspacePath: "p", agentIds: [] } as never)
-    );
+    const projectId = await t.run((ctx) => ctx.db.insert("projects", { name: "P", workspacePath: "p" }));
     await t.run((ctx) =>
       ctx.db.insert("agents", { name: "Assistant", role: "qa", status: "idle", isEnabled: true })
     );
@@ -90,7 +88,9 @@ describe("agentTemplates functions", () => {
     expect(agent?.capabilities).toEqual([...ROLES.qa.capabilities]);
     expect(agent?.isEnabled).toBe(true);
     const project = await t.run((ctx) => ctx.db.get(projectId));
-    expect(project?.agentIds).toEqual([first.agentId]);
+    // Plan 068: membership is gone. Creating an agent from a template does not
+    // write a per-project roster; the new agent is globally available.
+    expect(project?.agentIds).toBeUndefined();
 
     const second = await t.mutation(api.agentTemplates.createAgentFromTemplate, { templateId });
     expect(second.name).toBe("Assistant 3");

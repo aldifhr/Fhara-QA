@@ -678,14 +678,6 @@ export async function syncFixedTeam(ctx: MutationCtx, projectId?: Id<"projects">
     }
   }
 
-  if (projectId) {
-    const project = await ctx.db.get(projectId);
-    if (project) {
-      const combined = Array.from(new Set([...(project.agentIds ?? []), ...createdAgentIds]));
-      await ctx.db.patch(project._id, { agentIds: combined });
-    }
-  }
-
   return { total: FIXED_AGENTS.length, agentIds: createdAgentIds };
 }
 

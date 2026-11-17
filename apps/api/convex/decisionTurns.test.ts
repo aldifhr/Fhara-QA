@@ -27,9 +27,11 @@ const W = { workerToken: TOKEN, workerId: "w1" };
 async function seed(mode: PermissionMode = "auto_edits", withCto = true) {
   const t = convexTest(schema, modules);
   const ids = await t.run(async (ctx) => {
-    const cto = await ctx.db.insert("agents", { name: "CTO", role: "cto", status: "idle", isEnabled: true });
-    const be = await ctx.db.insert("agents", { name: "Backend", role: "backend", status: "idle", isEnabled: true });
-    const p = await ctx.db.insert("projects", { name: "P", workspacePath: "/tmp/p", agentIds: withCto ? [cto, be] : [be] });
+    // Plan 068: every enabled agent is on the global team. "No CTO in the
+    // team" now means the CTO is disabled, not left off a project roster.
+    const cto = await ctx.db.insert("agents", { name: "CTO", role: "cto", status: "idle", isEnabled: withCto });
+    await ctx.db.insert("agents", { name: "Backend", role: "backend", status: "idle", isEnabled: true });
+    const p = await ctx.db.insert("projects", { name: "P", workspacePath: "/tmp/p" });
     const task = await ctx.db.insert("tasks", { projectId: p, title: "Add CSV export", command: "c", status: "running", permissionMode: mode });
     const idle = await ctx.db.insert("tasks", { projectId: p, title: "Direct", command: "d", status: "queued", permissionMode: mode });
     return { p, cto, task, idle };

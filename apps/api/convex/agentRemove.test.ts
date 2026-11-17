@@ -24,9 +24,13 @@ describe("agents.remove", () => {
     expect(await t.run((ctx) => ctx.db.query("agents").collect())).toHaveLength(FIXED_TEAM_SEED_ORDER.length);
   });
 
-  test("an extra agent of a fixed role can be deleted, and takes its personal chats along", async () => {
+  test("a disabled extra agent can be deleted, and takes its personal chats along", async () => {
     const { t } = await seedTeam();
-    const extraId = await t.mutation(api.agents.create, { name: "Second backend", role: "backend" });
+    // Plan 068: every enabled agent is in the one global team and cannot be
+    // deleted. A disabled agent is outside it and is still removable.
+    const extraId = await t.run((ctx) =>
+      ctx.db.insert("agents", { name: "Second backend", role: "backend", status: "idle", isEnabled: false })
+    );
     const projectId = await t.run((ctx) => ctx.db.insert("projects", { name: "P", workspacePath: "/tmp/p" }));
     const ids = await t.run(async (ctx) => {
       const personalId = await ctx.db.insert("conversations", { kind: "personal", agentId: extraId, status: "active", createdAt: 1 });

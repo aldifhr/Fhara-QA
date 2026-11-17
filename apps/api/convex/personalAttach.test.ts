@@ -126,12 +126,19 @@ describe("attachProject", () => {
     expect(active?.conversation._id ?? null).not.toBe(conv);
   });
 
-  test("QA 10: missing project, non-member agent, project chats and owned projects are refused", async () => {
+  test("QA 10: missing project, disabled agent, project chats and owned projects are refused", async () => {
     const s = await setup();
     const qaConv = await s.t.mutation(api.conversations.getOrCreatePersonal, { agentId: s.qaId });
-    await expect(s.t.mutation(api.conversations.attachProject, { conversationId: qaConv, projectId: s.projectId })).rejects.toThrow(
-      /Add Quinn to this project's team first/
-    );
+    // Plan 068: every enabled agent belongs to every project, so the only
+    // ineligible agent is a disabled one. getOrCreatePersonal refuses those,
+    // so seed its personal chat directly.
+    const disabledConv = await s.t.run(async (ctx) => {
+      const disabledId = await ctx.db.insert("agents", { name: "Disabled Dan", role: "qa", status: "idle", isEnabled: false });
+      return ctx.db.insert("conversations", { kind: "personal", agentId: disabledId, status: "active", createdAt: Date.now() });
+    });
+    await expect(
+      s.t.mutation(api.conversations.attachProject, { conversationId: disabledConv, projectId: s.projectId })
+    ).rejects.toThrow(/disabled/);
     const gone = await s.t.run(async (ctx) => {
       const id = await ctx.db.insert("projects", { name: "Gone", workspacePath: "/gone" });
       await ctx.db.delete(id);

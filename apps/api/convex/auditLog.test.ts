@@ -10,8 +10,8 @@ const modules = import.meta.glob("./**/*.ts");
 describe("config changes write audit rows", () => {
   test("agents create/update/remove record field names only", async () => {
     const t = convexTest(schema, modules);
-    // The oldest Backend is the fixed team's and can't be deleted; Bea is an extra one.
-    await t.run((ctx) => ctx.db.insert("agents", { name: "Backend", role: "backend", status: "idle", isEnabled: true }));
+    // Plan 068: every enabled agent is in the one global team and cannot be
+    // deleted. Disable Bea first, then the removal is allowed.
     const agentId = await t.mutation(api.agents.create, { name: "Bea", role: "backend" });
     await t.mutation(api.agents.update, {
       agentId,
@@ -19,6 +19,7 @@ describe("config changes write audit rows", () => {
       role: "backend",
       systemPrompt: "SECRET-PROMPT-TEXT",
     });
+    await t.run((ctx) => ctx.db.patch(agentId, { isEnabled: false }));
     await t.mutation(api.agents.remove, { agentId });
 
     const page = await t.query(api.auditLog.list, { category: "config" });

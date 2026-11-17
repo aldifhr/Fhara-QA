@@ -339,9 +339,6 @@ export const createAgentFromTemplate = mutation({
       // L4: a template carries no LLM preference or runtime into a new agent;
       // every agent resolves the global model list (lib/llmChain.ts).
     });
-    if (project) {
-      await ctx.db.patch(project._id, { agentIds: [...(project.agentIds ?? []), agentId] });
-    }
     await recordAudit(ctx, {
       action: "agent.create",
       target: `${name} (${role})`,

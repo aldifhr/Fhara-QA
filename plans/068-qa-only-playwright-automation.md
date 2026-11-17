@@ -35,6 +35,7 @@ role but is not a new product feature.
 | D12 | Inbox and Personal Messages are removed from this fork (routes, nav, command entries) | Owner decision |
 | D13 | The Library Templates tab and the account stub row in the sidebar are removed | Owner decision |
 | D14 | **Sandbox removed** (owner decision): file tools no longer reject absolute/`..` paths and commands are no longer wrapped in `bwrap`. Forbidden-file checks (`.env`, credentials, another task's workspace), the exact-argv allowlist and every approval gate stay. This changes non-negotiable #4's sandboxing clause; recorded here explicitly | Owner decision |
+| D15 | **No project membership**: `projects.agentIds` is legacy-only and is no longer written or read; every enabled agent is available to every project, and the UI has no "add agent to project" controls | Owner decision |
 
 ## Steps (ordered, each ends in a compiling state)
 

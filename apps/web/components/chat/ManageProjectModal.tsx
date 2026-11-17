@@ -38,7 +38,6 @@ type ProjectDoc = {
   workspacePath?: string;
   approvalMode?: "ask" | "auto";
   defaultPermissionMode?: PermissionMode;
-  agentIds?: string[];
   instructions?: string;
   planReview?: string;
   shadowAgentDefault?: boolean;
@@ -64,7 +63,6 @@ export default function ManageProjectModal({
 }) {
   const toast = useToast();
   const updateProject = useMutation(api.projects.update);
-  const updateTeam = useMutation(api.projects.updateTeam);
   const setPlanReviewSetting = useMutation(api.planReview.setProjectPlanReview);
   const [planReview, setPlanReview] = useState<PlanReviewSetting>(normalizePlanReview(project.planReview));
   const setShadowDefault = useMutation(api.reviewer.setProjectShadowDefault);
@@ -114,7 +112,6 @@ export default function ManageProjectModal({
   // Lane git-init: checked on the saved folder; Initialize git re-queues tasks it held.
   const repoNote = useRepoReadinessNote({ projectId });
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(projectDefaultPermissionMode(project));
-  const [agentIds, setAgentIds] = useState<string[]>(project.agentIds ?? []);
   const [instructions, setInstructions] = useState(project.instructions ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -170,7 +167,6 @@ export default function ManageProjectModal({
       if (tiersTouched) {
         await setModelTiers({ projectId: projectId as never, modelTiers: tiers as never });
       }
-      await updateTeam({ projectId: projectId as never, agentIds: agentIds as never[] });
       toast("success", "Project updated");
       onClose();
     } catch (err) {
@@ -423,22 +419,6 @@ export default function ManageProjectModal({
             ))}
           </fieldset>
         ) : null}
-        <fieldset className="grid gap-2">
-          <legend className="font-medium">Project team</legend>
-          <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-line p-2">
-            {allAgents.length === 0 && <p className="text-[13px] text-ink-3">No agents yet. Create one with + in the Team section of the sidebar.</p>}
-            {allAgents.map((agent) => (
-              <label key={agent._id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={agentIds.includes(agent._id)}
-                  onChange={(e) => setAgentIds((current) => (e.target.checked ? [...current, agent._id] : current.filter((id) => id !== agent._id)))}
-                />
-                <span>{agentName(agent)}{agentRoleText(agent) ? <span className="text-ink-3">{` · ${agentRoleText(agent)}`}</span> : null}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
         {error && <p className="text-[13px] text-red-600">{error}</p>}
         <button type="submit" disabled={saving} className="rounded-lg bg-ink px-4 py-2 font-medium text-canvas hover:bg-ink/85 disabled:opacity-50">
           {saving ? "Saving…" : "Save project"}

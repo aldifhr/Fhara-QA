@@ -26,9 +26,12 @@ const LOW_ALLOW = '{"risk":"low","decision":"allow"}';
 async function setup(mode: PermissionMode = "full_access", withReviewer = true) {
   const t = convexTest(schema, modules);
   const ids = await t.run(async (ctx) => {
-    const reviewer = await ctx.db.insert("agents", { name: "Reviewer", role: "reviewer", status: "idle", isEnabled: true });
-    const backend = await ctx.db.insert("agents", { name: "Backend", role: "backend", status: "idle", isEnabled: true });
-    const projectId = await ctx.db.insert("projects", { name: "P", workspacePath: "/ws/p", agentIds: withReviewer ? [reviewer, backend] : [backend] });
+    // Plan 068: every enabled agent is on the global team. To model "no
+    // Reviewer in the team" the Reviewer must be disabled, not just left off a
+    // project roster.
+    await ctx.db.insert("agents", { name: "Reviewer", role: "reviewer", status: "idle", isEnabled: withReviewer });
+    await ctx.db.insert("agents", { name: "Backend", role: "backend", status: "idle", isEnabled: true });
+    const projectId = await ctx.db.insert("projects", { name: "P", workspacePath: "/ws/p" });
     const taskId = await ctx.db.insert("tasks", {
       projectId,
       title: "Rebuild the dependencies",

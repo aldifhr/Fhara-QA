@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -10,10 +11,21 @@ async function agent(t: ReturnType<typeof convexTest>, role: string, isEnabled =
   return await t.run((ctx) => ctx.db.insert("agents", { name: role.toUpperCase(), role, status: "idle", isEnabled }));
 }
 
-async function taskFor(t: ReturnType<typeof convexTest>, agentIds: string[]) {
+/**
+ * A run's agents come from the task's explicit assignment, else from the one
+ * global team. Plan 068 removed project rosters, so the assignment is how a
+ * fixture expresses a run without a CTO.
+ */
+async function taskFor(t: ReturnType<typeof convexTest>, assignedAgentIds?: Id<"agents">[]) {
   return await t.run(async (ctx) => {
-    const projectId = await ctx.db.insert("projects", { name: "P", workspacePath: "p", agentIds } as never);
-    return await ctx.db.insert("tasks", { projectId, title: "T", command: "c", status: "queued" } as never);
+    const projectId = await ctx.db.insert("projects", { name: "P", workspacePath: "p" });
+    return await ctx.db.insert("tasks", {
+      projectId,
+      title: "T",
+      command: "c",
+      status: "queued",
+      ...(assignedAgentIds ? { assignedAgentIds } : {}),
+    });
   });
 }
 
