@@ -295,19 +295,22 @@ describe("(d) path sandbox", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("resolveSandboxPath refuses `..`, absolute paths and a prefix sibling", () => {
-    expect(() => resolveSandboxPath(ws, "../repo-evil/secret.txt")).toThrow(/escapes/);
-    expect(() => resolveSandboxPath(ws, "a/../../outside.txt")).toThrow(/escapes/);
-    expect(() => resolveSandboxPath(ws, path.join(root, "repo-evil", "secret.txt"))).toThrow(/Absolute/);
+  it("resolveSandboxPath resolves `..`, absolute paths and a prefix sibling as requested", () => {
+    // Plan 068 D14: the path sandbox is removed; these resolve instead of throwing.
+    expect(resolveSandboxPath(ws, "../repo-evil/secret.txt")).toBe(path.resolve(ws, "../repo-evil/secret.txt"));
+    expect(resolveSandboxPath(ws, "a/../../outside.txt")).toBe(path.resolve(ws, "a/../../outside.txt"));
+    expect(resolveSandboxPath(ws, path.join(root, "repo-evil", "secret.txt"))).toBe(
+      path.join(root, "repo-evil", "secret.txt")
+    );
     expect(resolveSandboxPath(ws, "ok.md")).toBe(path.join(ws, "ok.md"));
   });
 
-  it("resolveSandboxPathAsync refuses a symlink out of the workspace, also into a prefix sibling", async () => {
-    await expect(resolveSandboxPathAsync(ws, "escape.txt")).rejects.toThrow(/symlink/);
-    await expect(resolveSandboxPathAsync(ws, "sibling.txt")).rejects.toThrow(/symlink/);
+  it("resolveSandboxPathAsync resolves a symlink out of the workspace, also into a prefix sibling", async () => {
+    expect(await resolveSandboxPathAsync(ws, "escape.txt")).toBe(path.join(ws, "escape.txt"));
+    expect(await resolveSandboxPathAsync(ws, "sibling.txt")).toBe(path.join(ws, "sibling.txt"));
   });
 
-  it("@mentions inline workspace files but never a symlink escape, a prefix sibling, `..` or a .env file", async () => {
+  it("@mentions refuse direct and symlinked secrets but inline ordinary files", async () => {
     const command = [
       "look at @ok.md",
       "and @escape.txt",
@@ -318,7 +321,16 @@ describe("(d) path sandbox", () => {
     ].join("\n");
     const out = await withFileContexts(root, ws, command);
     expect(out).toContain("fine content");
-    expect(out).not.toMatch(/SECRET_/);
+    // Symlink escapes now resolve to the requested path, so their targets are inlined.
+    expect(out).toContain("SECRET_OUTSIDE");
+    expect(out).toContain("SECRET_SIBLING");
+    // A symlink whose target is a secret is still refused (plan 068 D14 keeps
+    // forbidden-file checks even though path containment is gone).
+    expect(out).not.toContain("SECRET_ROOT_ENV");
+    // Forbidden names and `..` mentions are still refused by the read guard.
+    expect(out).not.toContain("SECRET_LOCAL_ENV");
+    expect(out).not.toContain("SECRET_NESTED_ENV");
+    expect(out).not.toContain("--- File: ../repo-evil/secret.txt ---");
   });
 });
 

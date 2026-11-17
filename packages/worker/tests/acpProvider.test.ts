@@ -107,7 +107,10 @@ describe("acpPathAllowed", () => {
     expect(acpPathAllowed(READ_ONLY_OPENCODE_POLICY, "read", path.join(root, "src/a.ts"), root)).toMatchObject({
       ok: true,
     });
-    expect(acpPathAllowed(READ_ONLY_OPENCODE_POLICY, "read", "D:/elsewhere/x.ts", root).ok).toBe(false);
+    // A real traversal is still refused by acpPathAllowed's own containment
+    // check (a Windows-style drive letter is a literal name on POSIX, so use
+    // a POSIX `..` escape here).
+    expect(acpPathAllowed(READ_ONLY_OPENCODE_POLICY, "read", path.join(root, "..", "elsewhere", "x.ts"), root).ok).toBe(false);
   });
 
   it("denies sensitive paths through the read rule map", () => {

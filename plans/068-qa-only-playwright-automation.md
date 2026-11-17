@@ -34,6 +34,7 @@ role but is not a new product feature.
 | D11 | Work-shaped messages start automatically in the same turn: default composer mode is `auto_edits`; no CTO wrap-up or "Create task" offer. Push/PR and destructive steps keep their approval gate | Owner decision |
 | D12 | Inbox and Personal Messages are removed from this fork (routes, nav, command entries) | Owner decision |
 | D13 | The Library Templates tab and the account stub row in the sidebar are removed | Owner decision |
+| D14 | **Sandbox removed** (owner decision): file tools no longer reject absolute/`..` paths and commands are no longer wrapped in `bwrap`. Forbidden-file checks (`.env`, credentials, another task's workspace), the exact-argv allowlist and every approval gate stay. This changes non-negotiable #4's sandboxing clause; recorded here explicitly | Owner decision |
 
 ## Steps (ordered, each ends in a compiling state)
 

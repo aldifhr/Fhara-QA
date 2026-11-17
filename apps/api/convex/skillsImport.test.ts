@@ -224,7 +224,7 @@ const FILES: MockFile[] = [
     content: skillMd(
       "emil-design-eng",
       "Design engineering philosophy.",
-      ["# Design Engineering", longSection("Core", 200), longSection("Springs", 200), longSection("Gestures", 200)].join("\n\n")
+      ["# Design Engineering", longSection("Core", 260), longSection("Springs", 260), longSection("Gestures", 260)].join("\n\n")
     ),
   },
   { path: "skills/pick-ui-library/SKILL.md", content: "# Pick a library\n\nChoose wisely.\n" },

@@ -360,6 +360,10 @@ export async function withFileContexts(
     // and a secret file is never inlined, also not through a link to it.
     const abs = await resolveSandboxPathAsync(base, rel).catch(() => null);
     if (!abs || isSecretMention(rel) || isSecretMention(path.relative(realBase, abs))) continue;
+    // No path sandbox (plan 068 D14), but a link may still point at a secret:
+    // check the resolved target's own path before inlining it.
+    const realTarget = await fs.realpath(abs).catch(() => abs);
+    if (isSecretMention(realTarget)) continue;
     try {
       const stat = await fs.stat(abs);
       if (!stat.isFile()) continue;

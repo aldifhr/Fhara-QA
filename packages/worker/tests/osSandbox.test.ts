@@ -37,19 +37,22 @@ afterEach(async () => {
 });
 
 describe("resolveSandboxMode", () => {
-  it("defaults to workspace-write on Linux when unset", () => {
-    expect(resolveSandboxMode({}, "linux")).toEqual({ mode: "workspace-write", explicit: false });
-    expect(resolveSandboxMode({ SANDBOX_MODE: "  " }, "linux")).toEqual({ mode: "workspace-write", explicit: false });
+  // Plan 068 D14: the OS sandbox is removed by owner decision. The fork
+  // always resolves to off, explicitly, regardless of env or platform.
+  it("always resolves to off when the mode is unset or blank", () => {
+    expect(resolveSandboxMode({}, "linux")).toEqual({ mode: "off", explicit: true });
+    expect(resolveSandboxMode({ SANDBOX_MODE: "  " }, "linux")).toEqual({ mode: "off", explicit: true });
   });
 
-  it("needs off to be set explicitly on Linux", () => {
+  it("ignores an explicit non-off mode", () => {
     expect(resolveSandboxMode({ SANDBOX_MODE: "off" }, "linux")).toEqual({ mode: "off", explicit: true });
-    expect(resolveSandboxMode({ SANDBOX_MODE: "read-only" }, "linux")).toEqual({ mode: "read-only", explicit: true });
+    expect(resolveSandboxMode({ SANDBOX_MODE: "read-only" }, "linux")).toEqual({ mode: "off", explicit: true });
+    expect(resolveSandboxMode({ SANDBOX_MODE: "workspace-write" }, "win32")).toEqual({ mode: "off", explicit: true });
   });
 
-  it("reads an unset mode as off on hosts without bwrap, but keeps an explicit one", () => {
-    expect(resolveSandboxMode({}, "darwin")).toEqual({ mode: "off", explicit: false, note: "no bwrap on darwin" });
-    expect(resolveSandboxMode({ SANDBOX_MODE: "workspace-write" }, "win32")).toEqual({ mode: "workspace-write", explicit: true });
+  it("adds no platform note on hosts without bwrap", () => {
+    expect(resolveSandboxMode({}, "darwin")).toEqual({ mode: "off", explicit: true });
+    expect(resolveSandboxMode({}, "linux")).toEqual({ mode: "off", explicit: true });
   });
 });
 
@@ -67,20 +70,21 @@ describe("probe and status", () => {
     expect(probeSandboxSupport("linux")).toBe("full");
   });
 
-  it("reports SANDBOX_UNAVAILABLE when the mode is not off and bwrap is not usable", () => {
+  it("reports off (never SANDBOX_UNAVAILABLE) even when bwrap is not usable", () => {
     resetSandboxProbeForTest(() => false);
     const status = sandboxStatus({}, "linux");
-    expect(status).toMatchObject({ mode: "workspace-write", support: "off", active: false, code: SANDBOX_UNAVAILABLE });
-    expect(sandboxCapability(status)).toBe("sandbox:unavailable");
-    expect(sandboxStatus({ SANDBOX_MODE: "off" }, "linux")).toMatchObject({ active: false, note: "sandbox off" });
-    expect(sandboxStatus({ SANDBOX_MODE: "off" }, "linux").code).toBeUndefined();
+    expect(status).toMatchObject({ mode: "off", support: "off", active: false, note: "sandbox off" });
+    expect(status.code).toBeUndefined();
+    expect(status.code).not.toBe(SANDBOX_UNAVAILABLE);
+    expect(sandboxCapability(status)).toBe("sandbox:off");
+    expect(sandboxStatus({ SANDBOX_MODE: "workspace-write" }, "linux").code).toBeUndefined();
   });
 
-  it("is active with a working probe", () => {
+  it("stays off even with a working bwrap probe", () => {
     resetSandboxProbeForTest(() => true);
     const status = sandboxStatus({}, "linux");
-    expect(status).toMatchObject({ active: true, support: "full", note: "sandbox workspace-write" });
-    expect(sandboxCapability(status)).toBe("sandbox:workspace-write");
+    expect(status).toMatchObject({ mode: "off", active: false, support: "off", note: "sandbox off" });
+    expect(sandboxCapability(status)).toBe("sandbox:off");
   });
 });
 
@@ -101,22 +105,21 @@ describe("bwrapProfileArgs", () => {
 });
 
 describe("wrapCommand", () => {
-  it("runs as-is when the mode is off, and refuses when bwrap is unusable", () => {
+  it("runs as-is (unconfined) even when bwrap is unusable", () => {
     resetSandboxProbeForTest(() => false);
-    expect(wrapCommand("npm", ["test"], root, { env: { SANDBOX_MODE: "off" } })).toMatchObject({ kind: "unconfined", reason: "off", command: "npm" });
-    const refused = wrapCommand("npm", ["test"], root, { env: {} });
-    expect(refused.kind).toBe("unavailable");
-    expect(refused.kind === "unavailable" && refused.message).toContain(SANDBOX_UNAVAILABLE);
+    const wrapped = wrapCommand("npm", ["test"], root, { env: {} });
+    expect(wrapped).toMatchObject({ kind: "unconfined", reason: "off", command: "npm", args: ["test"] });
+    expect(wrapped.kind === "unconfined" && wrapped.status).toMatchObject({ mode: "off", active: false });
   });
 
-  it("wraps the argv in bwrap with the worktree writable", () => {
+  it("never wraps the argv in bwrap, even with a working probe", () => {
     resetSandboxProbeForTest(() => true);
     const wrapped = wrapCommand("npm", ["run", "test"], root, { env: {} });
-    expect(wrapped.kind).toBe("sandboxed");
-    if (wrapped.kind !== "sandboxed") return;
-    expect(wrapped.command).toBe("bwrap");
-    expect(wrapped.args.slice(-6)).toEqual(["--chdir", root, "--", "npm", "run", "test"]);
-    expect(wrapped.args.join(" ")).toContain(`--bind ${root} ${root}`);
+    expect(wrapped.kind).toBe("unconfined");
+    if (wrapped.kind !== "unconfined") return;
+    expect(wrapped.reason).toBe("off");
+    expect(wrapped.command).toBe("npm");
+    expect(wrapped.args).toEqual(["run", "test"]);
   });
 
   it("runs unconfined only when asked (after a run_unconfined approval)", () => {
@@ -185,10 +188,11 @@ function recordingPty(spawned: Spawned[]) {
 
 describe("runSandboxedShell (run_unconfined card)", () => {
   beforeEach(() => {
+    // The fork ignores this env value: the sandbox is always off (plan 068 D14).
     process.env.SANDBOX_MODE = "workspace-write";
   });
 
-  it("asks before an unconfined rerun after a denied write, and reruns on approval", async () => {
+  it("runs unconfined once and never asks for a card now that the sandbox is off", async () => {
     resetSandboxProbeForTest(() => true);
     const spawned: Spawned[] = [];
     const events: string[] = [];
@@ -198,35 +202,39 @@ describe("runSandboxedShell (run_unconfined card)", () => {
       "npm",
       ["run", "test"],
       { spawnImpl: recordingPty(spawned), onEvent: (type) => void events.push(type), requestUnconfined },
-      true
+      false
     );
-    expect(requestUnconfined).toHaveBeenCalledWith({ command: "npm", args: ["run", "test"] });
-    expect(spawned.map((s) => s.command)).toEqual(["bwrap", "npm"]);
-    expect(result).toMatchObject({ unconfined: true, code: 0 });
+    expect(requestUnconfined).not.toHaveBeenCalled();
+    expect(spawned.map((s) => s.command)).toEqual(["npm"]);
+    expect(result).toMatchObject({ code: 0 });
     expect(result.stdout).toContain("ok");
-    expect(events).toEqual(["shell.command", "shell.sandbox_denied", "shell.command"]);
+    expect(result.unconfined).toBeUndefined();
+    expect(result.sandbox).toBeUndefined();
+    expect(events).toEqual(["shell.command"]);
   });
 
-  it("keeps the refused result when the card is declined", async () => {
+  it("never reaches the card-declined path when the sandbox is off", async () => {
     resetSandboxProbeForTest(() => true);
     const spawned: Spawned[] = [];
     const requestUnconfined = vi.fn(async () => ({ allowed: false, via: "deny", reason: "Denied by the user" }));
-    const result = await runSandboxedShell(root, "npm", ["run", "test"], { spawnImpl: recordingPty(spawned), requestUnconfined }, true);
-    expect(spawned).toHaveLength(1);
-    expect(result.sandbox).toBe("denied");
+    const result = await runSandboxedShell(root, "npm", ["run", "test"], { spawnImpl: recordingPty(spawned), requestUnconfined }, false);
+    expect(spawned.map((s) => s.command)).toEqual(["npm"]);
+    expect(result.code).toBe(0);
+    expect(result.sandbox).toBeUndefined();
     expect(result.unconfined).toBeUndefined();
-    expect(result.stderr).toContain("not run unconfined");
+    expect(result.stderr).not.toContain("not run unconfined");
+    expect(requestUnconfined).not.toHaveBeenCalled();
   });
 
-  it("never runs unconfined silently when bwrap is unavailable", async () => {
+  it("runs unconfined even when bwrap is unavailable, with no card and no SANDBOX_UNAVAILABLE", async () => {
     resetSandboxProbeForTest(() => false);
     const spawned: Spawned[] = [];
     const requestUnconfined = vi.fn(async () => ({ allowed: false, via: "deny", reason: "Denied by the user" }));
     const result = await runSandboxedShell(root, "npm", ["run", "test"], { spawnImpl: recordingPty(spawned), requestUnconfined }, false);
-    expect(spawned).toHaveLength(0);
-    expect(requestUnconfined).toHaveBeenCalledTimes(1);
-    expect(result.sandbox).toBe("unavailable");
-    expect(result.stderr).toContain(SANDBOX_UNAVAILABLE);
+    expect(spawned.map((s) => s.command)).toEqual(["npm"]);
+    expect(requestUnconfined).not.toHaveBeenCalled();
+    expect(result.sandbox).toBeUndefined();
+    expect(result.stderr).not.toContain(SANDBOX_UNAVAILABLE);
   });
 
   it("does not ask when the mode is off", async () => {

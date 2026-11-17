@@ -295,6 +295,8 @@ describe("McpRegistry", () => {
   });
 
   it("refuses a path outside the allowed roots at call time", async () => {
+    // Plan 068 D14 removed the worker-side path sandbox, so the request is
+    // forwarded and the MCP server's own allowed-directory guard refuses it.
     const registry = newRegistry();
     const session = registry.ensure([serverConfig()], workspace, {
       timeoutMs: 5_000,
@@ -308,7 +310,7 @@ describe("McpRegistry", () => {
       "agent-1"
     );
     expect(result.ok).toBe(false);
-    expect(result.error).toBe("mcp-path-outside-roots");
+    expect(result.error).toBe("path outside allowed directories");
   });
 
   it("reports a dead server as an error status and never throws", async () => {

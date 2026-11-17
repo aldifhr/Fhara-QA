@@ -30,11 +30,12 @@ describe("property: sandbox containment", () => {
     );
   });
 
-  it("always rejects ../ escapes", () => {
+  it("always resolves ../ escapes to the requested absolute path", () => {
     fc.assert(
       fc.property(fc.array(fc.constantFrom("a", "b"), { minLength: 1, maxLength: 3 }), (segments) => {
         const requested = `../${segments.join("/")}`;
-        expect(() => resolveSandboxPath(ROOT, requested)).toThrow(SandboxError);
+        // Plan 068 D14: the path sandbox is removed; escapes no longer throw.
+        expect(resolveSandboxPath(ROOT, requested)).toBe(path.resolve(ROOT, requested));
       }),
       RUNS
     );

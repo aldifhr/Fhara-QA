@@ -1,10 +1,11 @@
 /**
  * Plan 009: MCP permission matrix + path authorization.
  *
- * Invariants: traversal/absolute paths outside the root set are refused;
- * symlinks pointing out are refused; protected names never pass; write
- * tools are filtered for every role by default; `supportedTools` scope
- * applies; system roots are never valid.
+ * Invariants: protected names never pass validateFilePath; write tools are
+ * filtered for every role by default; `supportedTools` scope applies; system
+ * roots are never valid. Plan 068 D14 removed the path sandbox, so absolute /
+ * traversal / symlinked paths are resolved and authorized (still gated by the
+ * forbidden-name checks).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as fs from "node:fs/promises";
@@ -18,11 +19,11 @@ import {
   permissionsForRole,
   REASON_PATH_FORBIDDEN,
   REASON_PATH_INVALID,
-  REASON_PATH_OUTSIDE,
   REASON_TOOL_DENIED,
   REASON_TOOL_UNKNOWN,
 } from "@/mcp/permissions";
 import type { McpToolDefinition } from "@/mcp/types";
+import { resolveWithinRootsAsync } from "@/tools/sandbox";
 
 const TOOLS: McpToolDefinition[] = [
   { name: "read_file", description: "read", inputSchema: {} },
@@ -174,17 +175,19 @@ describe("authorizeToolCall", () => {
     expect(result).toEqual({ ok: false, reason: REASON_PATH_INVALID });
   });
 
-  it("refuses absolute paths outside the root set", async () => {
+  it("allows absolute paths outside the root set (sandbox removed)", async () => {
+    const requested = path.join(outside, "secret.txt");
     const result = await authorizeToolCall({
       tool: "read_file",
-      args: { path: path.join(outside, "secret.txt") },
+      args: { path: requested },
       scope: { role: "researcher" },
       allowedRoots: [root],
     });
-    expect(result).toEqual({ ok: false, reason: REASON_PATH_OUTSIDE });
+    expect(result).toEqual({ ok: true, action: "read" });
+    expect(await resolveWithinRootsAsync([root], requested)).toEqual({ ok: true, path: requested });
   });
 
-  it("refuses paths that escape via ../", async () => {
+  it("allows paths that resolve outside via ../ (sandbox removed)", async () => {
     const traversal = path.join(root, "..", path.basename(outside), "secret.txt");
     const result = await authorizeToolCall({
       tool: "read_file",
@@ -192,11 +195,10 @@ describe("authorizeToolCall", () => {
       scope: { role: "researcher" },
       allowedRoots: [root],
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe(REASON_PATH_OUTSIDE);
+    expect(result).toEqual({ ok: true, action: "read" });
   });
 
-  it("refuses a symlink inside the workspace pointing outside", async () => {
+  it("allows a symlinked path pointing outside (sandbox removed)", async () => {
     const link = path.join(root, "link-out");
     await fs.symlink(outside, link);
     const result = await authorizeToolCall({
@@ -205,7 +207,7 @@ describe("authorizeToolCall", () => {
       scope: { role: "researcher" },
       allowedRoots: [root],
     });
-    expect(result).toEqual({ ok: false, reason: REASON_PATH_OUTSIDE });
+    expect(result).toEqual({ ok: true, action: "read" });
   });
 
   it("allows a symlink that stays inside the workspace", async () => {
@@ -232,14 +234,16 @@ describe("authorizeToolCall", () => {
     }
   });
 
-  it("checks every path argument, including move destinations", async () => {
+  it("resolves every path argument, including move destinations (sandbox removed)", async () => {
+    const dest = path.join(outside, "y.ts");
     const result = await authorizeToolCall({
       tool: "move_file",
-      args: { srcPath: path.join(root, "src", "index.ts"), destPath: path.join(outside, "y.ts") },
+      args: { srcPath: path.join(root, "src", "index.ts"), destPath: dest },
       scope: { role: "developer", allowWrite: true },
       allowedRoots: [root],
     });
-    expect(result).toEqual({ ok: false, reason: REASON_PATH_OUTSIDE });
+    expect(result).toEqual({ ok: true, action: "move" });
+    expect(await resolveWithinRootsAsync([root], dest)).toEqual({ ok: true, path: dest });
   });
 });
 

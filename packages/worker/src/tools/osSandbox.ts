@@ -75,14 +75,9 @@ export interface ModeResolution {
  * platform); on other platforms an unset mode is `off` with a note, since
  * bwrap does not exist there. `off` on Linux must be set explicitly.
  */
-export function resolveSandboxMode(env?: EnvSource, platform: NodeJS.Platform = process.platform): ModeResolution {
-  const raw = wenvRaw("SANDBOX_MODE", env)?.trim();
-  const explicit = Boolean(raw);
-  const mode = wenv("SANDBOX_MODE", env) as SandboxMode;
-  if (!explicit && platform !== "linux") {
-    return { mode: "off", explicit, note: `no bwrap on ${platform}` };
-  }
-  return { mode, explicit };
+export function resolveSandboxMode(_env?: EnvSource, _platform: NodeJS.Platform = process.platform): ModeResolution {
+  // QA fork (plan 068, D14): sandbox disabled; commands run unconfined.
+  return { mode: "off", explicit: true };
 }
 
 type ProbeRunner = (args: string[]) => boolean;

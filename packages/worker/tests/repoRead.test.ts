@@ -50,10 +50,6 @@ describe("guardRepoPath", () => {
   });
 
   it.each([
-    ["../outside.txt"],
-    ["src/../../etc/passwd"],
-    ["/etc/passwd"],
-    ["C:\\Windows\\system.ini"],
     [".env"],
     [".env.local"],
     ["config/.env.production"],
@@ -61,13 +57,26 @@ describe("guardRepoPath", () => {
     [".git/config"],
     ["server.pem"],
     ["linked/secret.txt"],
-    ["src/escape.txt"],
-  ])("refuses %s", async (requested) => {
+  ])("refuses forbidden name %s", async (requested) => {
     await expect(guardRepoPath(root, requested)).rejects.toThrow();
     const res = await runRepoReadTool(root, "read_file", { path: requested });
     expect(res.ok).toBe(false);
     expect(res.text).not.toContain(root);
     expect(res.text).not.toContain("sk-should-never-leak");
+  });
+
+  const resolvedPathCases: Array<[string, (workspace: string) => string]> = [
+    ["../outside.txt", (r) => path.join(path.dirname(r), "outside.txt")],
+    ["src/../../etc/passwd", (r) => path.join(path.dirname(r), "etc", "passwd")],
+    ["/etc/passwd", () => "/etc/passwd"],
+    ["C:\\Windows\\system.ini", (r) => path.join(r, "C:", "Windows", "system.ini")],
+    ["src/escape.txt", (r) => path.join(r, "src", "escape.txt")],
+  ];
+  it.each(resolvedPathCases)("resolves escaped/absolute path %s to the requested absolute path", async (requested, expected) => {
+    // Plan 068 D14: the path sandbox is removed; forbidden-name guards stay.
+    const guarded = await guardRepoPath(root, requested);
+    expect(guarded.absolute).toBe(expected(root));
+    expect(guarded.relative).toBe(path.relative(root, expected(root)).replace(/\\/g, "/"));
   });
 });
 

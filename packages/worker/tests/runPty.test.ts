@@ -144,9 +144,10 @@ describe("runPty gates", () => {
       truncated: false,
     });
     expect(fake.written).toEqual(["y\r"]);
-    expect((await fs.realpath(root)).toLowerCase()).toBe(
-      fake.spawnOptions?.cwd.toLowerCase()
-    );
+    // Plan 068 D14: resolveSandboxPathAsync no longer realpaths, so the spawn
+    // cwd is the requested absolute path (on macOS /var is a symlink to
+    // /private/var, which realpath would resolve).
+    expect(path.resolve(root).toLowerCase()).toBe(fake.spawnOptions?.cwd.toLowerCase());
     expect(fake.spawnOptions?.name).toBe("xterm-256color");
     expect(fake.spawnOptions?.cols).toBe(80);
   }, 8_000);

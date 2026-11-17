@@ -19,7 +19,7 @@ import { CreateAgentModal } from "./sidebar/AgentForms";
 import ActivityPopover from "./sidebar/ActivityPopover";
 import { NavGroup, NavRow, RailItem } from "./sidebar/SidebarNav";
 import { sidebarNavLinks } from "./sidebar/navLinks";
-import { AccountRow, Logo, SearchBox, SidebarHeader, useShellChords } from "./sidebar/SidebarChrome";
+import { AccountRow, SearchBox, SidebarHeader, useShellChords } from "./sidebar/SidebarChrome";
 import { agentName } from "@/lib/agentRoles";
 import { useOptionalWorkspace } from "@/app/WorkspaceContext";
 import { useUiPref } from "@/lib/uiPrefs";
@@ -154,7 +154,6 @@ export default function Sidebar({
           activity; settings + account at the bottom). It always shows on
           desktop — the sidebar folds beside it instead of replacing it. */}
       <aside aria-label="App rail" className="flex h-full w-14 shrink-0 flex-col items-center gap-1.5 border-r border-line bg-panel py-3 max-[979px]:hidden">
-        <Logo onNavigate={closeDrawer} />
         <RailItem icon={Plus} label="New project" onClick={() => { setCollapsedPref(false); openNewProject(); }} />
         <span aria-hidden="true" className="my-1 h-px w-6 bg-line" />
         {projectId ? (
