@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Activity, Inbox, Menu, MessageCircle, PanelLeft, Plus, Settings, X } from "lucide-react";
+import { Activity, Menu, PanelLeft, Plus, Settings, X } from "lucide-react";
 import { api } from "@/api/convex/_generated/api";
 import ConfirmDialog, { type ConfirmRequest } from "./ConfirmDialog";
 import AgentDetailPanel from "./AgentDetailPanel";
@@ -17,7 +17,7 @@ import ProjectList from "./sidebar/ProjectList";
 import TeamList, { type TeamAgent } from "./sidebar/TeamList";
 import { CreateAgentModal } from "./sidebar/AgentForms";
 import ActivityPopover from "./sidebar/ActivityPopover";
-import { InboxNav, NavGroup, NavRow, RailItem } from "./sidebar/SidebarNav";
+import { NavGroup, NavRow, RailItem } from "./sidebar/SidebarNav";
 import { sidebarNavLinks } from "./sidebar/navLinks";
 import { AccountRow, Logo, SearchBox, SidebarHeader, useShellChords } from "./sidebar/SidebarChrome";
 import { agentName } from "@/lib/agentRoles";
@@ -134,7 +134,6 @@ export default function Sidebar({
   };
 
   const { build, development, observe } = sidebarNavLinks({ pathname, projectId });
-  const inboxActive = pathname === "/inbox";
   const activity = (
     <NavRow icon={Activity} label="Activity" buttonRef={activityRef} expanded={activityOpen} onClick={() => setActivityOpen((v) => !v)} />
   );
@@ -158,15 +157,6 @@ export default function Sidebar({
         <Logo onNavigate={closeDrawer} />
         <RailItem icon={Plus} label="New project" onClick={() => { setCollapsedPref(false); openNewProject(); }} />
         <span aria-hidden="true" className="my-1 h-px w-6 bg-line" />
-        <QueryBoundary fallback={<RailItem icon={Inbox} label="Inbox" href="/inbox" active={inboxActive} />}>
-          <InboxNav icon={Inbox} active={inboxActive} rail />
-        </QueryBoundary>
-        <RailItem
-          icon={MessageCircle}
-          label="Personal messages"
-          href="/messages"
-          active={pathname.startsWith("/messages") || pathname.startsWith("/message")}
-        />
         {projectId ? (
           <RailItem icon={Activity} label="Activity" buttonRef={activityRef} expanded={activityOpen} onClick={() => setActivityOpen((v) => !v)} />
         ) : null}
@@ -179,15 +169,6 @@ export default function Sidebar({
             />
           )}
           <RailItem icon={Settings} label="Settings" onClick={openShellSettings} />
-          <button
-            type="button"
-            onClick={() => openSettings(projectId, "signin")}
-            aria-label="Account"
-            title="Local workspace · Accounts and sign-in"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field bg-inset text-[11px] font-semibold text-ink-2 outline-none transition hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30"
-          >
-            F
-          </button>
         </div>
         {activityOpen && projectId && <ActivityPopover anchor={activityRef.current} projectId={projectId} onClose={() => setActivityOpen(false)} />}
       </aside>
@@ -229,23 +210,7 @@ export default function Sidebar({
 
         <nav aria-label="Workspace" className="shell-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 pb-4 pt-1">
           <div className="flex flex-col gap-3">
-            <QueryBoundary
-              fallback={<NavRow icon={Inbox} label="Inbox" href="/inbox" onClick={closeDrawer} />}
-            >
-              <InboxNav icon={Inbox} active={inboxActive} rail={false} onNavigate={closeDrawer} />
-            </QueryBoundary>
-            <NavRow
-              icon={MessageCircle}
-              label="Personal messages"
-              href="/messages"
-              active={pathname.startsWith("/messages") || pathname.startsWith("/message")}
-              onClick={closeDrawer}
-            />
-            <QueryBoundary
-              fallback={
-                <NavRow icon={Inbox} label="Needs you" href="/inbox" onClick={closeDrawer} />
-              }
-            >
+            <QueryBoundary fallback={null}>
               <NeedsYou open={open.needsYou} onToggle={() => toggleSection("needsYou")} onNavigate={closeDrawer} />
             </QueryBoundary>
           </div>

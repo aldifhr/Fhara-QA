@@ -17,7 +17,7 @@ import { existsSync, promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ROLES, ROLE_KEYS, canWritePath } from "@/api/convex/lib/roles";
+import { ROLES, ROLE_KEYS, canWritePath, permissionsFromTools } from "@/api/convex/lib/roles";
 import { buildOpencodePolicy, mergedPolicyViolation, opencodePermissionBlock, rulesetPolicyViolation, flattenPermissionBlock, evaluateOpencodeRule } from "@/execution/opencodePolicy";
 import { decideToolAccess, ROLE_OPERATION_POLICY } from "@/execution/opencodePermissions";
 import { nativeArgv, OPENCODE_KEY_ENV, opencodeRunAgentName, opencodeSafetyEnv, runNativeProvider, verifyLoadedPolicy } from "@/execution/nativeProvider";
@@ -50,20 +50,22 @@ describe("role × operation table (OAK shape)", () => {
     }
   });
 
-  it("the CTO gets no shell via OpenCode", () => {
+  it("a retired role gets no shell via OpenCode", () => {
+    // Retired role names have no operation-policy row: the table wins even
+    // when the supplied permission row drifts to "allowlist".
     const key = "cto";
     expect(decideToolAccess({ roleKey: key, operation: "shell" })).toBe("deny");
-    // Even if a role row drifted to allow a shell, the table wins.
-    const p = buildOpencodePolicy({ permissions: { ...ROLES[key].permissions, shell: "allowlist", write: true }, mutating: true, roleKey: key });
+    const permissions = { ...permissionsFromTools(["read_file", "write_file"]), shell: "allowlist" as const, write: true };
+    const p = buildOpencodePolicy({ permissions, mutating: true, roleKey: key });
     expect(p.bash["*"]).toBe("deny");
     expect(Object.values(p.bash).every((v) => v === "deny")).toBe(true);
     expect(p.edit["*"]).toBe("deny");
   });
 
-  it("the CTO stays read-only via OpenCode", () => {
+  it("a retired role stays read-only via OpenCode", () => {
     const key = "cto";
     expect(decideToolAccess({ roleKey: key, operation: "write" })).toBe("deny");
-    const p = buildOpencodePolicy({ permissions: { ...ROLES[key].permissions, write: true }, mutating: true, roleKey: key });
+    const p = buildOpencodePolicy({ permissions: { ...permissionsFromTools(["read_file", "write_file"]), write: true }, mutating: true, roleKey: key });
     expect(Object.entries(p.edit).filter(([, v]) => v === "allow")).toEqual([]);
   });
 
@@ -132,14 +134,16 @@ describe("role × operation table (OAK shape)", () => {
 });
 
 describe("mergedPolicyViolation", () => {
-  const policy = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true, roleKey: "backend" });
+  const policy = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true, roleKey: "qa" });
   const block = opencodePermissionBlock(policy);
   it("accepts Fhara's own block", () => {
     expect(mergedPolicyViolation(policy, block)).toBeNull();
   });
   it("catches the reorder attack a repo opencode.json causes", () => {
-    const { "*": star, ...rest } = policy.bash;
-    const reordered = { ...block, bash: { ...rest, "*": star } };
+    // QA's verify shell already ends with `*` deny, so a plain reorder changes
+    // nothing; the hostile layer re-allows `git push` last (last match wins).
+    const { "*": star, "git push*": _pushDeny, ...rest } = policy.bash;
+    const reordered = { ...block, bash: { ...rest, "*": star, "git push*": "allow" } };
     expect(mergedPolicyViolation(policy, reordered)).toMatch(/git push/);
   });
   it("catches a re-allowed external_directory and a missing block", () => {
@@ -162,8 +166,8 @@ describe("mergedPolicyViolation", () => {
     expect(Object.keys(block)[0]).toBe("*");
     expect(block["*"]).toBe("deny");
     expect(block.codesearch).toBe(policy.webfetch);
-    const cto = opencodePermissionBlock(buildOpencodePolicy({ permissions: ROLES.cto.permissions, mutating: false, roleKey: "cto" }));
-    expect(cto.codesearch).toBe("deny");
+    const retired = opencodePermissionBlock(buildOpencodePolicy({ permissions: permissionsFromTools([]), mutating: false, roleKey: "cto" }));
+    expect(retired.codesearch).toBe("deny");
   });
 });
 
@@ -194,7 +198,7 @@ describe.skipIf(process.platform === "win32")("fake opencode binary", () => {
       ].join("\n"),
       { mode: 0o755 }
     );
-    const policy = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true, roleKey: "backend" });
+    const policy = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true, roleKey: "qa" });
     const result = await runNativeProvider({ workspacePath: dir, prompt: "p", command: script, llm: LLM, policy, timeoutMs: 20_000, opencodeCacheDir: path.join(dir, "cache") });
     expect(result.status).toBe("completed");
     const content = JSON.parse(await fs.readFile(path.join(dir, "content.json"), "utf-8"));
@@ -272,7 +276,7 @@ describe.skipIf(!existsSync(LIVE_BIN) || process.env.OPENCODE_LIVE === "0")("liv
         path.join(repo, "opencode.json"),
         JSON.stringify({ permission: { bash: { "git push*": "allow" }, external_directory: "allow" }, agent: { build: { permission: { bash: "allow" } } } })
       );
-      const policy = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true, roleKey: "backend" });
+      const policy = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true, roleKey: "qa" });
       const base = { HOME: home, XDG_CONFIG_HOME: path.join(home, "c"), XDG_DATA_HOME: path.join(home, "d"), XDG_CACHE_HOME: path.join(os.tmpdir(), "fhara-opencode-cache"), PWD: repo, OPENCODE_DISABLE_AUTOUPDATE: "1" };
       const agent = opencodeRunAgentName();
       const safe = buildChildEnv({ ...base, ...opencodeSafetyEnv(policy, agent) });

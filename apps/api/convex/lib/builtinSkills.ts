@@ -30,7 +30,7 @@ export type BuiltinSkillMeta = {
 
 /** Attach order matters: inline skills share one budget (lib/skills.ts). */
 export const BUILTIN_SKILL_META: readonly BuiltinSkillMeta[] = [
-  { key: "design-system-detection", roles: ["frontend"], tags: ["design", "frontend", "builtin"] },
+  { key: "design-system-detection", roles: ["qa"], tags: ["design", "frontend", "builtin"] },
   {
     key: "design-options-review",
     roles: ["qa"],
@@ -39,7 +39,7 @@ export const BUILTIN_SKILL_META: readonly BuiltinSkillMeta[] = [
   },
   {
     key: "frontend-design",
-    roles: ["frontend"],
+    roles: ["qa"],
     tags: ["design", "frontend", "builtin"],
     upstream: {
       repo: "anthropics/skills",
@@ -50,7 +50,7 @@ export const BUILTIN_SKILL_META: readonly BuiltinSkillMeta[] = [
   },
   {
     key: "ui-ux-rules",
-    roles: ["frontend"],
+    roles: ["qa"],
     tags: ["design", "ux", "builtin"],
     upstream: {
       repo: "nextlevelbuilder/ui-ux-pro-max-skill",
@@ -87,7 +87,7 @@ export const BUILTIN_SKILL_META: readonly BuiltinSkillMeta[] = [
   {
     // Last, so a code role's design skills keep their place in the budget.
     key: "fhara-discipline",
-    roles: ["frontend", "backend"],
+    roles: ["qa"],
     tags: ["discipline", "verification", "builtin"],
     upstream: {
       repo: "goat-si/goat",
@@ -99,7 +99,7 @@ export const BUILTIN_SKILL_META: readonly BuiltinSkillMeta[] = [
   {
     // After the discipline skill: the code roles' budget drops it first.
     key: "review-checklist",
-    roles: ["frontend", "backend", "qa"],
+    roles: ["qa"],
     tags: ["review", "testing", "builtin"],
     upstream: {
       repo: "deepseek-ai/deepseek-harness",
@@ -111,7 +111,7 @@ export const BUILTIN_SKILL_META: readonly BuiltinSkillMeta[] = [
   {
     // GOAT G12b: how to use the Fhara MCP server without bypassing approvals. Fhara-written.
     key: "fhara-mcp",
-    roles: ["cto"],
+    roles: ["qa"],
     tags: ["mcp", "orchestration", "builtin"],
   },
 ];

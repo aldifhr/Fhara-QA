@@ -148,7 +148,7 @@
       "id": "chat-reply",
       "role": "chat",
       "match": [
-        "on the agent team of project"
+        "the assistant for project"
       ],
       "reasoning": "A small, self-contained change; offer the task instead of doing it in chat.",
       "reply": "This is a small, self-contained change. Press Create task to start it: I will plan it and hand it to the right teammate, and you can follow the run from the task card."

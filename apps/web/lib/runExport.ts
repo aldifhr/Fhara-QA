@@ -213,7 +213,7 @@ export function buildRunMarkdown(run: RunExportData, opts: RunExportOptions): st
 
   // Timeline
   head.push("", `## Timeline (${run.steps.length} steps)`, "");
-  head.push("| # | Role | Step | Status | Duration | Tokens in/out |");
+  head.push("| # | Assistant | Step | Status | Duration | Tokens in/out |");
   head.push("|---|---|---|---|---|---|");
   run.steps.forEach((s, i) => {
     const title = `${s.title}${s.attempt && s.attempt > 1 ? ` (try ${s.attempt})` : ""}`;
@@ -272,7 +272,7 @@ export function buildRunMarkdown(run: RunExportData, opts: RunExportOptions): st
     if (delegations.length > 40) tail.push(`- … ${delegations.length - 40} more delegations omitted`);
   }
   if (totals.byAgent.length) {
-    tail.push("", "## Agents", "", "| Role | Calls | Tokens in/out | Cost |", "|---|---|---|---|");
+    tail.push("", "## Agents", "", "| Assistant | Calls | Tokens in/out | Cost |", "|---|---|---|---|");
     for (const a of totals.byAgent) {
       tail.push(`| ${cell(a.role)} | ${a.calls} | ${formatTokens(a.inputTokens)}/${formatTokens(a.outputTokens)} | ${formatCost(a.estimatedCost)} |`);
     }

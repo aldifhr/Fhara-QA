@@ -42,11 +42,12 @@ describe("planWriteOffer", () => {
   test("the CTO routes an HTML file to Frontend", () => {
     expect(plan(team[0], "buatkan file ultimate.html").offer).toMatchObject({ kind: "implementation", assigneeAgentId: "fe" });
   });
-  test("a non-code role routes by files; unclear requests carry no assignee", () => {
-    expect(plan(team[3], "buatkan landing.html").offer?.assigneeAgentId).toBe("fe");
+  test("the QA speaker takes its own code request; unclear requests carry no assignee", () => {
+    // Plan 068: QA is the only role and may write test paths, so it owns the request.
+    expect(plan(team[3], "buatkan landing.html").offer?.assigneeAgentId).toBe("qa");
     expect(plan(team[0], "tambahkan tes untuk main.js").offer).toEqual({
       kind: "implementation",
-      hint: { source: "offer", kind: "implementation", files: ["main.js"] },
+      hint: { source: "offer", kind: "implementation", files: ["main.js"], role: "qa" },
     });
   });
   test("no offer for chat, option picks, or a teammate the user did not address", () => {
@@ -58,7 +59,7 @@ describe("planWriteOffer", () => {
     expect(plan(team[0], "tolong jalankan tes", { taskIntent: { kind: "task", subtype: "testing", runCommands: ["npm run test"] } }).offer).toEqual({
       kind: "testing",
       commands: ["npm run test"],
-      hint: { source: "offer", kind: "testing" },
+      hint: { source: "offer", kind: "testing", role: "qa" },
     });
   });
 });
@@ -70,8 +71,7 @@ describe("offerForReply: budget hit and write fallback", () => {
 
   test("a routed audit that spent its whole repo budget carries an audit offer (not implementation)", () => {
     const offer = offerForReply(audit(), "Saya membaca 25 file; sisanya belum.", { budgetHit: true });
-    expect(offer).toMatchObject({ kind: "audit", hint: { kind: "audit", role: "qa" } });
-    expect(offer?.assigneeAgentId).toBeUndefined();
+    expect(offer).toMatchObject({ kind: "audit", hint: { kind: "audit", role: "qa" }, assigneeAgentId: "qa" });
   });
 
   test("no budget hit and no write need → no offer", () => {

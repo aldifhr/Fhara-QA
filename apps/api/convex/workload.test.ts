@@ -38,11 +38,14 @@ describe("workload.byRole", () => {
 
     const all = await t.query(api.workload.byRole, {});
     expect(all.totals.subtasks).toBe(3); // the owned project is not visible
-    expect(all.rows.find((r) => r.key === "frontend")).toMatchObject({ subtasks: 2, timedRuns: 1, totalDurationMs: 4000, routes: 1, fallbackRoutes: 0 });
-    expect(all.rows.find((r) => r.key === "backend")).toMatchObject({ subtasks: 1, routes: 1, fallbackRoutes: 1 });
-    expect(all.rows.find((r) => r.key === "cto")).toMatchObject({ tokens: 100, tokensEstimated: true, chatReplies: 1 });
+    // Plan 068: all stored roles resolve to the single QA bucket ("Assistant").
+    expect(all.rows.map((r) => r.key)).toEqual(["qa"]);
+    expect(all.rows.find((r) => r.key === "qa")).toMatchObject({
+      subtasks: 3, timedRuns: 1, totalDurationMs: 4000, routes: 2, fallbackRoutes: 1,
+      tokens: 400, tokensEstimated: true, cost: 0.01, chatReplies: 1,
+    });
     expect(all.totals).toMatchObject({ tokens: 400, routes: 2, fallbackRoutes: 1, chatReplies: 1 });
-    expect(all.summary).toMatch(/^Frontend did 67% of subtasks; /);
+    expect(all.summary).toMatch(/^Assistant did 100% of subtasks; /);
 
     const one = await t.query(api.workload.byRole, { projectId, sinceDays: 7 });
     expect(one.totals.subtasks).toBe(2);

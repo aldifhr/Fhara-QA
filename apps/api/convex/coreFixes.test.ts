@@ -381,8 +381,8 @@ describe("H5 authorization on owned projects", () => {
   });
 });
 
-describe("M10 revoked capabilities (retired roles no longer disabled by sync)", () => {
-  test("sync strips CTO code-review but no longer retires old-role agents", async () => {
+describe("M10 revoked capabilities (plan 068: retired roles disabled by sync)", () => {
+  test("sync disables and stamps retired-role agents, leaving their stored capabilities untouched", async () => {
     const t = makeT();
     const ids = await t.run(async (ctx) => ({
       uiux: await ctx.db.insert("agents", { name: "UX", role: "UI/UX", status: "idle", isEnabled: true }),
@@ -396,14 +396,13 @@ describe("M10 revoked capabilities (retired roles no longer disabled by sync)", 
     const [uiux, lead, cto] = await t.run(async (ctx) => [
       await ctx.db.get(ids.uiux), await ctx.db.get(ids.lead), await ctx.db.get(ids.cto),
     ]);
-    // Retired roles are no longer disabled by the sync (they're just not in FIXED_TEAM_SEED_ORDER).
-    expect(uiux?.isEnabled).toBe(true);
-    expect(lead?.isEnabled).toBe(true);
-    // CTO code-review is still revoked.
-    expect(cto?.capabilities).not.toContain("code-review");
-    expect(cto?.capabilities).toContain("my-custom");
-    expect(cto?.capabilities).not.toContain("security-audit");
-    expect(cto?.capabilities).not.toContain("project-coordination");
+    // Plan 068: retired roles are disabled and stamped, so a stale row can never be routed.
+    for (const row of [uiux, lead, cto]) {
+      expect(row?.isEnabled).toBe(false);
+      expect(row?.retiredAt).toBeGreaterThan(0);
+    }
+    // Only live roles get their defaults merged/revoked; a retired row keeps its capabilities.
+    expect(cto?.capabilities).toEqual(["architecture", "code-review", "my-custom"]);
   });
 });
 

@@ -395,7 +395,7 @@ export default function ManageProjectModal({
         </label>
         {tierState?.roleOverride ? (
           <fieldset className="grid gap-2">
-            <legend className="font-medium">Model per role</legend>
+            <legend className="font-medium">Model per assistant</legend>
             <span className="text-[12.5px] text-ink-3">
               The model for each role goes first; the global model list in Settings → LLM & Models is the fallback.
             </span>

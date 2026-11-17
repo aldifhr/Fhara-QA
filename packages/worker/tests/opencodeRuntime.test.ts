@@ -335,7 +335,7 @@ describe("executeSubtask on the OpenCode runtime", () => {
       await fs.writeFile(path.join(opts.cwd, ".env"), "LEAK=1\n");
       return { stdout: EVENTS.join("\n"), stderr: "", code: 0 };
     };
-    const agent: AgentDefinition = { _id: "a1", name: "FE", role: "frontend", executionRuntime: "opencode" };
+    const agent: AgentDefinition = { _id: "a1", name: "Writer", role: "custom-fe", supportedTools: ["read_file", "write_file", "run_command"], executionRuntime: "opencode" };
     const { base, saved, events } = input(agent, spawnImpl);
     const result = await executeSubtask(base);
     expect(result.status).toBe("completed");
@@ -355,7 +355,7 @@ describe("executeSubtask on the OpenCode runtime", () => {
       env = opts.env;
       return { stdout: EVENTS.join("\n"), stderr: "", code: 0 };
     };
-    const agent: AgentDefinition = { _id: "a2", name: "BE", role: "backend", executionRuntime: "opencode", opencodeModel: "anthropic/claude-sonnet-4" };
+    const agent: AgentDefinition = { _id: "a2", name: "Writer", role: "custom-be", supportedTools: ["read_file", "write_file", "run_command"], executionRuntime: "opencode", opencodeModel: "anthropic/claude-sonnet-4" };
     // O1: a pinned provider needs an OpenCode login (jockey rule); plant one.
     const fakeData = await fs.mkdtemp(path.join(os.tmpdir(), "fhara-oc-auth-"));
     await fs.mkdir(path.join(fakeData, "opencode"), { recursive: true });

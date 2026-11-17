@@ -28,8 +28,8 @@ async function setup(options: { estimate?: unknown } = {}) {
     for (const role of ["cto", "frontend", "backend", "reviewer"]) {
       agentIds.push(await ctx.db.insert("agents", { name: role.toUpperCase(), role, status: "idle", isEnabled: true }));
     }
-    // A disabled QA agent: not a valid reassignment target.
-    agentIds.push(await ctx.db.insert("agents", { name: "QA", role: "qa", status: "idle", isEnabled: false }));
+    // QA is the only live role; an enabled one is needed for a valid reassign.
+    agentIds.push(await ctx.db.insert("agents", { name: "Assistant", role: "qa", status: "idle", isEnabled: true }));
     const projectId = await ctx.db.insert("projects", { name: "P", workspacePath: "p", agentIds, planReview: "always" });
     const taskId = await ctx.db.insert("tasks", {
       projectId,
@@ -159,7 +159,7 @@ describe("plan review: edits", () => {
       approvalId,
       ops: [
         { op: "update", key: "ui", title: "Theme toggle in the header", description: "Render it in layout.tsx" },
-        { op: "reassign", key: "review", role: "cto" },
+        { op: "reassign", key: "review", role: "qa" },
         { op: "remove", key: "api", dependents: "relink" },
       ],
     });
@@ -179,7 +179,7 @@ describe("plan review: edits", () => {
     expect(payload.visualQa).toBe(true);
     expect(payload.subtasks.map((s) => s.key)).toEqual(["ui", "review"]);
     expect(payload.subtasks[0]).toMatchObject({ title: "Theme toggle in the header", dependencies: [], order: 0 });
-    expect(payload.subtasks[1]).toMatchObject({ capability: "architecture", kind: "analysis" });
+    expect(payload.subtasks[1]).toMatchObject({ capability: "browser-testing", kind: "qa" });
     expect(state.subtasks.map((s) => s.key).sort()).toEqual(["review", "ui"]);
     // Old approval superseded, a new pending one for v2; task still waits.
     const byVersion = Object.fromEntries(state.approvals.map((a) => [a.planVersion, a.status]));
@@ -193,7 +193,7 @@ describe("plan review: edits", () => {
     const approvalId = await openReview(t, taskId, projectId);
     const cases = [
       [{ op: "update" as const, key: "ui", title: "   " }],
-      [{ op: "reassign" as const, key: "ui", role: "qa" }], // QA agent is disabled
+      [{ op: "reassign" as const, key: "ui", role: "cto" }], // retired role is no longer a valid target
       [{ op: "reassign" as const, key: "ui", role: "growth" }],
       [{ op: "remove" as const, key: "api", dependents: "reject" as const }], // ui depends on it
       [{ op: "remove" as const, key: "api" }, { op: "remove" as const, key: "ui" }, { op: "remove" as const, key: "review" }],

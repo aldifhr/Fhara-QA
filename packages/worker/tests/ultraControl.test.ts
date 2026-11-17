@@ -147,7 +147,7 @@ describe("(b) invalid-JSON retry checks the remaining subtask time", () => {
       command: "Update src/hello.ts",
       plan: { version: 1, goal: "g", strategy: "single", requiresApproval: false, maxConcurrency: 1, subtasks: [] },
       subtask: { key: "implement", title: "Implement", description: "Update src/hello.ts", kind: "code_change", capability: "frontend-development", dependencies: [], order: 0 },
-      agent: { _id: "a", name: "Frontend", role: "frontend", capabilities: ["frontend-development"] },
+      agent: { _id: "a", name: "Writer", role: "custom-writer", capabilities: ["frontend-development"], supportedTools: ["read_file", "write_file", "run_command"] },
       llmHandles: [handle],
       priorOutputs: new Map(),
       fileChanges: [],

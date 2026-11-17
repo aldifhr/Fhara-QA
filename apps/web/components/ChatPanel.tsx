@@ -19,6 +19,7 @@ import { useReplyStop } from "./chat/useReplyStop";
 import { isReplySettled } from "@/lib/stopControl";
 import { useProjectSlash } from "./chat/useProjectSlash";
 import ChatHeader, { type ChatTab, type HeaderNotification } from "./chat/ChatHeader";
+import ThreadBar from "./chat/ThreadBar";
 import ManageProjectModal from "./chat/ManageProjectModal";
 import MessageList from "./chat/MessageList";
 import { quoteOf, type ChatQuote } from "./chat/QuoteBlock";
@@ -29,7 +30,7 @@ import { useDraftMentions } from "./chat/useDraftMentions";
 import { useWorkspace } from "@/app/WorkspaceContext";
 import { clockTime, isSameDay, shortDate } from "@/lib/format";
 import { projectMembers } from "@/lib/projectMembers";
-import { projectDefaultPermissionMode, type PermissionMode } from "@/api/convex/lib/permissionModes";
+import { type PermissionMode } from "@/api/convex/lib/permissionModes";
 import { buildDecisionTray, latestOpenOptionPrompt, type TrayAction, type TrayItem } from "@/api/convex/lib/decisionTray";
 import { composeOfferedTask } from "@/api/convex/lib/chat/intent";
 import { parseOptions } from "@/lib/options";
@@ -114,7 +115,9 @@ export default function ChatPanel({ projectId, tab, setTab, onSelectTask, onOpen
     setPermissionModeChoice(null);
     setModelChoice(null);
   }, [projectId]);
-  const permissionMode: PermissionMode = permissionModeChoice ?? projectDefaultPermissionMode(project as any);
+  // Threads-first fork: work requests start executing in this turn. Only push/PR
+  // and destructive steps keep their approval gate (server-enforced).
+  const permissionMode: PermissionMode = permissionModeChoice ?? "auto_edits";
   const [liveStatus, setLiveStatus] = useState<StatusMap | undefined>(undefined);
   const [pins, setPins] = useState<any[] | undefined>(undefined);
   const [manageOpen, setManageOpen] = useState(false);
@@ -623,6 +626,8 @@ export default function ChatPanel({ projectId, tab, setTab, onSelectTask, onOpen
         onOpenDrawer={openSidebar}
         formatTime={formatMessageTime}
       />
+
+      <ThreadBar projectId={projectId} currentId={conversationId ?? (activeConversation as any)?.conversation?._id ?? null} />
 
       <div
         ref={scrollRef}

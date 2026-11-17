@@ -6,19 +6,12 @@
  * labels, @mention chip colours — via the `@/api/convex/lib/roles` alias)
  * and the worker.
  *
- * The fixed team is the user-approved roster: CTO, Frontend, Backend, QA.
- * Designer is a live role available for manual agent creation but is not
- * seeded into the fixed team.
+ * This is the QA-only fork (plan 068). The fixed team is one QA role; CTO,
+ * Frontend, Backend and Designer are retired and their aliases resolve to QA.
  */
 
 /** Current roles, in display order. Every role menu reads this list. */
-export const ROLE_KEYS = [
-  "cto",
-  "frontend",
-  "backend",
-  "qa",
-  "designer",
-] as const;
+export const ROLE_KEYS = ["qa"] as const;
 
 export type RoleKey = (typeof ROLE_KEYS)[number];
 
@@ -58,30 +51,56 @@ export interface RolePermissions {
  * role so the rest of the system never needs to know about the old roles.
  */
 export const LEGACY_ROLE_SUCCESSORS: Readonly<Record<string, RoleKey>> = {
-  "ui-ux": "designer",
-  ux: "designer",
-  support: "backend",
-  documentation: "backend",
-  "technical-writer": "backend",
-  writer: "backend",
-  devops: "backend",
-  "dev ops": "backend",
-  "devops engineer": "backend",
+  cto: "qa",
+  frontend: "qa",
+  "front-end": "qa",
+  backend: "qa",
+  "back-end": "qa",
+  designer: "qa",
+  "ui-ux": "qa",
+  ux: "qa",
+  support: "qa",
+  documentation: "qa",
+  "technical-writer": "qa",
+  writer: "qa",
+  devops: "qa",
+  "dev ops": "qa",
+  "devops engineer": "qa",
   reviewer: "qa",
   "code-review": "qa",
   "code review": "qa",
-  researcher: "cto",
-  research: "cto",
-  "product-analyst": "cto",
-  product: "cto",
-  analyst: "cto",
-  "product analyst": "cto",
-  lead: "cto",
-  growth: "cto",
-  orchestrator: "cto",
-  planner: "cto",
-  architect: "cto",
+  researcher: "qa",
+  research: "qa",
+  "product-analyst": "qa",
+  product: "qa",
+  analyst: "qa",
+  "product analyst": "qa",
+  lead: "qa",
+  growth: "qa",
+  orchestrator: "qa",
+  planner: "qa",
+  architect: "qa",
 };
+
+/**
+ * Roles no longer in the fixed team. `syncFixedTeam` disables stored agents
+ * whose normalized role is one of these, so a stale row can never be routed
+ * after the roster change.
+ */
+export const RETIRED_ROLE_KEYS: readonly string[] = [
+  "cto",
+  "frontend",
+  "backend",
+  "designer",
+  "lead",
+  "growth",
+  "product-analyst",
+  "ui-ux",
+  "support",
+  "devops",
+  "reviewer",
+  "researcher",
+];
 
 export interface RoleDefinition {
   key: RoleKey;
@@ -125,120 +144,43 @@ export interface RoleDefinition {
 }
 
 export const ROLES: Record<RoleKey, RoleDefinition> = {
-  cto: {
-    key: "cto",
-    label: "CTO",
-    title: "CTO",
-    category: "Leadership",
-    description: "Technical architecture, technical decisions, risk evaluation.",
-    registryDescription: "Technical architecture, technical decisions, risk evaluation.",
-    workerDescription: "Technical architecture decisions, only when the planner flags one (new dependency, schema, auth boundary, API contract, infra split).",
-    // security-audit and project-coordination are not CTO capabilities:
-    // security-audit lives in Backend, project-coordination is system code.
-    capabilities: ["architecture", "research"],
-    registryCapabilities: ["architecture", "research"],
-    defaultTools: ["read_file"],
-    permissions: { read: true, write: false, shell: "none", web: false, push: false, options: false },
-    priority: 9,
-    maxConcurrency: 2,
-    hint: "Decide technical approach, architecture, and risk with brief rationale. Read-only planning and review — no code writing, no over-engineering. Report to the owner in 2-3 plain-language sentences, no bullets, headers, or terminal output.",
-    chatSummary: "Technical direction, architecture, technology choices, data modelling and risk trade-offs.",
-    defaultPromptKey: "cto",
-    color: "bg-blue-500/10 text-blue-700 ring-blue-500/20 dark:bg-blue-500/20 dark:text-blue-300",
-  },
-
-  frontend: {
-    key: "frontend",
-    label: "Frontend",
-    title: "Frontend Developer",
-    category: "Engineering",
-    description: "Frontend implementation, React, Next.js, responsive UI, design fidelity.",
-    registryDescription: "Frontend implementation, React, Next.js, responsive UI.",
-    workerDescription: "React and Next.js development. UI implementation.",
-    capabilities: ["frontend-development", "ui-ux-design"],
-    registryCapabilities: ["frontend-development", "ui-ux-design"],
-    defaultTools: ["read_file", "write_file", "run_command"],
-    permissions: { read: true, write: true, shell: "allowlist", web: false, push: false, options: false },
-    priority: 8,
-    maxConcurrency: 2,
-    hint: "Implement exactly the assigned frontend subtask, reusing UI primitives; strict TypeScript, accessible markup, English copy. Report changed files and limits. Never mark the global task complete.",
-    chatSummary: "Frontend development: UI frameworks, components, state, styling, responsive layout and accessibility.",
-    defaultPromptKey: "frontend",
-    color: "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-300",
-  },
-  backend: {
-    key: "backend",
-    label: "Backend",
-    title: "Backend Developer",
-    category: "Engineering",
-    description: "Backend, API, database implementation, server-side business logic.",
-    registryDescription: "Backend, API, database, server-side logic.",
-    workerDescription: "API development and server-side business logic.",
-    capabilities: ["backend-development", "code-review", "security-audit", "documentation-support"],
-    registryCapabilities: ["backend-development", "code-review", "security-audit", "documentation-support"],
-    defaultTools: ["read_file", "write_file", "run_command"],
-    permissions: { read: true, write: true, shell: "allowlist", web: false, push: false, options: false },
-    priority: 8,
-    maxConcurrency: 2,
-    hint: "Implement exactly the assigned backend subtask (Convex functions, schema, validation), keeping security invariants and additive schema changes. Report changed files and limits. Never mark the global task complete.",
-    chatSummary: "Backend development: APIs, business logic, databases, auth, data validation and integrations.",
-    defaultPromptKey: "backend",
-    color: "bg-amber-500/10 text-amber-800 ring-amber-500/20 dark:bg-amber-500/20 dark:text-amber-300",
-  },
   qa: {
     key: "qa",
-    label: "QA",
-    title: "QA Engineer",
-    category: "Quality",
-    description: "Testing, bug detection, quality assurance, verification.",
-    registryDescription: "Testing, bug detection, quality assurance, verification.",
-    workerDescription: "Test planning, execution, bug detection, quality verification.",
+    label: "Assistant",
+    title: "Assistant",
+    category: "Automation",
+    description: "Runs the QA automation pipeline: test plans, generated specs, execution and healing.",
+    registryDescription: "Runs the QA automation pipeline: test plans, generated specs, execution and healing.",
+    workerDescription: "Test planning, spec generation, execution and quality verification.",
     capabilities: ["browser-testing", "code-review"],
     registryCapabilities: ["browser-testing", "code-review"],
-    defaultTools: ["read_file", "run_command"],
-    permissions: { read: true, write: false, shell: "verify", web: false, push: false, options: false },
+    defaultTools: ["read_file", "write_file", "run_command"],
+    permissions: {
+      read: true,
+      write: ["tests/**", "e2e/**", "**/*.test.*", "**/*.spec.*", "**/__tests__/**", "playwright.config.*"],
+      shell: "verify",
+      web: false,
+      push: false,
+      options: false,
+    },
     priority: 7,
     maxConcurrency: 2,
-    hint: "Verify with the narrowest relevant checks and report evidence. Distinguish executed tests from proposed ones — never fabricate results. Defects go back to the implementer with a concrete repro.",
-    chatSummary: "Testing and quality: test strategy, unit/integration/end-to-end tests, bug hunting and verification.",
+    hint: "Run the QA automation pipeline: plan checks, write specs only in test paths, execute them, and report evidence. Never fabricate results; defects go back to the owner.",
+    chatSummary: "Test automation: test plans, generated specs, execution, bug findings and verification.",
     defaultPromptKey: "qa",
     color: "bg-orange-500/10 text-orange-700 ring-orange-500/20 dark:bg-orange-500/20 dark:text-orange-300",
   },
-
-  designer: {
-    key: "designer",
-    label: "Designer",
-    title: "UI/UX Designer",
-    category: "Design",
-    description: "UI/UX design specifications, layout, interaction states, accessibility, visual mockups.",
-    registryDescription: "UI/UX design specifications, layout, interaction states, accessibility.",
-    workerDescription: "Design specifications and visual mockups; hands implementation to Frontend. Read-only.",
-    capabilities: ["ui-ux-design"],
-    registryCapabilities: ["ui-ux-design"],
-    defaultTools: ["read_file"],
-    permissions: { read: true, write: false, shell: "none", web: false, push: false, options: true },
-    priority: 6,
-    maxConcurrency: 2,
-    hint: "Produce implementation-ready design specs: layout, component hierarchy, tokens, states, responsive and accessibility notes. When more than one direction is plausible, mock 2-4 static HTML variants and ask the user to pick with show_options. Never edit project files or run commands; hand implementation to Frontend. Report only your own subtask.",
-    chatSummary: "UI/UX design: layout, information hierarchy, interaction patterns, design systems, accessibility and visual mockups.",
-    defaultPromptKey: "designer",
-    color: "bg-fuchsia-500/10 text-fuchsia-700 ring-fuchsia-500/20 dark:bg-fuchsia-500/20 dark:text-fuchsia-300",
-  },
-
-
 
 };
 
 /**
  * Order the fixed-team sync seeds agents in (and appends them to a
- * project's `agentIds`). Kept as it was so existing rosters keep their order.
- * Designer is deliberately NOT seeded: it is a role a user adds manually
- * (fixedTeamSync.test).
+ * project's `agentIds`). One agent in this fork.
  */
-export const FIXED_TEAM_SEED_ORDER: readonly RoleKey[] = ["cto", "frontend", "backend", "qa"];
+export const FIXED_TEAM_SEED_ORDER: readonly RoleKey[] = ["qa"];
 
 /** The fixed team as the sidebar and Team list show it, top to bottom. */
-export const FIXED_TEAM_DISPLAY_ORDER: readonly RoleKey[] = ["cto", "frontend", "backend", "qa"];
+export const FIXED_TEAM_DISPLAY_ORDER: readonly RoleKey[] = ["qa"];
 
 /** "product-analyst" → "Product Analyst": the label for a key with no role row. */
 function titleCaseRoleKey(key: string): string {
@@ -250,13 +192,14 @@ function titleCaseRoleKey(key: string): string {
 }
 
 /**
- * Capabilities a fixed role used to ship with and must no longer carry.
- * The sync otherwise only ever UNIONS defaults into existing rows, so a CTO
- * row seeded with `code-review` kept routing reviews to the CTO forever.
+ * Capabilities a stored agent must no longer carry after the roster change.
  * Only these are removed; capabilities a user added by hand are kept.
  */
 export const REVOKED_DEFAULT_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {
   cto: ["code-review", "security-audit", "project-coordination"],
+  frontend: ["frontend-development", "ui-ux-design"],
+  backend: ["backend-development", "code-review", "security-audit", "documentation-support"],
+  designer: ["ui-ux-design"],
 };
 
 /** Permissions for a fixed role key (null for an unknown/custom role). */

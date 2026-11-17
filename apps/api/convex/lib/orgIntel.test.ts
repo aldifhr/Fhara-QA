@@ -22,32 +22,32 @@ const orgAgent = (over: Partial<OrgAgentInput> & { id: string; role: string }): 
 });
 
 describe("buildOrgChart", () => {
-  test("CTO at the top, every fixed role under it in registry order, vacant roles and custom roles get nodes", () => {
+  test("QA Assistant at the top, retired roles folded into QA, custom roles get nodes", () => {
     const chart = buildOrgChart(
       [
-        orgAgent({ id: "c", role: "cto", model: "gpt-x", skills: 2, tools: ["read_file"] }),
-        orgAgent({ id: "f", role: "frontend", enabled: false }),
-        orgAgent({ id: "b", role: "backend" }),
+        orgAgent({ id: "c", role: "cto", name: "Assistant", model: "gpt-x", skills: 2, tools: ["read_file"] }),
+        orgAgent({ id: "f", role: "frontend", name: "Frontend", enabled: false }),
+        orgAgent({ id: "b", role: "backend", name: "Backend" }),
         orgAgent({ id: "g", role: "growth", retired: true, enabled: false }), // retired → hidden
         orgAgent({ id: "x", role: "data-scientist", name: "Data" }),
       ],
-      [{ key: "cto", name: "CTO", enabled: true }, { key: "qa", name: "QA Engineer", enabled: false }]
+      [{ key: "qa", name: "Assistant", enabled: true }]
     );
     expect(chart.rootKey).toBe("c");
-    expect(chart.nodes[0]).toMatchObject({ key: "c", parent: null, label: "CTO", model: "gpt-x", skills: 2, tools: ["read_file"], registryName: "CTO" });
+    expect(chart.nodes[0]).toMatchObject({ key: "c", parent: null, label: "Assistant", roleKey: "qa", model: "gpt-x", skills: 2, tools: ["read_file"], registryName: "Assistant" });
+    // All legacy roles resolve to qa; only custom roles keep their own node.
     const children = chart.nodes.filter((n) => n.parent === "c");
-    expect(children.map((n) => n.roleKey)).toEqual(["frontend", "backend", "qa", "designer", "data-scientist"]);
-    expect(chart.nodes.find((n) => n.roleKey === "frontend")).toMatchObject({ agentId: "f", enabled: false });
-    expect(chart.nodes.find((n) => n.roleKey === "qa")).toMatchObject({ agentId: null, key: "role:qa", registryEnabled: false });
+    expect(children.map((n) => n.roleKey)).toEqual(["qa", "qa", "data-scientist"]);
+    expect(chart.nodes.find((n) => n.agentId === "f")).toMatchObject({ roleKey: "qa", enabled: false });
     expect(chart.nodes.find((n) => n.roleKey === "data-scientist")).toMatchObject({ fixed: false, agentId: "x" });
     expect(chart.nodes.some((n) => n.agentId === "g")).toBe(false);
-    expect(chart.counts).toEqual({ agents: 4, enabled: 3, vacant: 2, custom: 1 });
+    expect(chart.counts).toEqual({ agents: 4, enabled: 3, vacant: 0, custom: 1 });
   });
 
-  test("no CTO agent → a vacant CTO root", () => {
-    const chart = buildOrgChart([orgAgent({ id: "b", role: "backend" })], []);
-    expect(chart.rootKey).toBe("role:cto");
-    expect(chart.nodes.find((n) => n.agentId === "b")?.parent).toBe("role:cto");
+  test("no QA agent → a vacant QA root", () => {
+    const chart = buildOrgChart([orgAgent({ id: "d", role: "data-scientist", name: "Data" })], []);
+    expect(chart.rootKey).toBe("role:qa");
+    expect(chart.nodes.find((n) => n.agentId === "d")?.parent).toBe("role:qa");
   });
 });
 
@@ -103,7 +103,7 @@ describe("collaboration graph", () => {
   ];
   const at = NOW - DAY;
 
-  test("chat handoffs: recorded replies and inferred @mentions, one per reply, reset by the next user message", () => {
+  test("chat handoffs: only recorded handoffs survive the QA-only roster (no CTO to infer @mentions from)", () => {
     const hs = chatHandoffs(
       [
         { id: "1", conversationId: "k", authorType: "user", agentId: null, content: "hi", at: 1 },
@@ -115,10 +115,7 @@ describe("collaboration graph", () => {
       ],
       agents
     );
-    expect(hs).toEqual([
-      { fromAgentId: "c", toAgentId: "f", at: 3, recorded: false },
-      { fromAgentId: "c", toAgentId: "b", at: 4, recorded: true },
-    ]);
+    expect(hs).toEqual([{ fromAgentId: "c", toAgentId: "b", at: 4, recorded: true }]);
   });
 
   test("a CTO reply naming more than three teammates is not a handoff", () => {
@@ -136,46 +133,48 @@ describe("collaboration graph", () => {
     const st = (key: string, kind: string, role: string | null, deps: string[] = [], taskId = "t1", when = at) => ({
       taskId, key, kind, role, dependencies: deps, at: when, origin: null,
     });
+    // Plan 068: legacy roles all collapse to qa, so a custom role supplies the
+    // second bucket for cross-role edges; qa→qa edges are filtered.
     const graph = buildCollaborationGraph({
       now: NOW,
       sinceDays: 7,
-      agents,
-      rosterRoles: ["cto", "frontend", "backend", "qa"],
+      agents: [
+        { id: "q", name: "Assistant", role: "qa" },
+        { id: "d", name: "Data", role: "data-scientist" },
+      ],
+      rosterRoles: ["qa", "data-scientist"],
       subtasks: [
-        st("api", "code_change", "backend"),
-        st("ui", "code_change", "frontend", ["api"]),
-        st("ui_polish", "code_change", "frontend", ["ui"]), // same role → no edge
+        st("api", "code_change", "qa"),
+        st("ui", "code_change", "data-scientist", ["api"]),
+        st("ui_polish", "code_change", "data-scientist", ["ui"]), // same role → no edge
         st("review", "review", "qa", ["ui"]),
-        st("review_fix_1", "code_change", "frontend"),
+        st("review_fix_1", "code_change", "data-scientist"),
         st("qa", "qa", "qa", ["ui"]),
-        st("fix_qa_1", "code_change", "backend"),
-        st("old", "code_change", "backend", ["api"], "t0", NOW - 30 * DAY), // out of window
+        st("fix_qa_1", "code_change", "data-scientist"),
+        st("old", "code_change", "qa", ["api"], "t0", NOW - 30 * DAY), // out of window
       ],
       delegations: [
-        { fromRole: "frontend", toRole: "backend", at },
-        { fromRole: "frontend", toRole: "backend", at },
-        { fromRole: "cto", toRole: "frontend", at: NOW - 40 * DAY },
+        { fromRole: "data-scientist", toRole: "qa", at },
+        { fromRole: "data-scientist", toRole: "qa", at },
+        { fromRole: "frontend", toRole: "backend", at }, // both resolve to qa → filtered
+        { fromRole: "cto", toRole: "qa", at: NOW - 40 * DAY }, // out of window
       ],
       messages: [
-        { id: "m1", conversationId: "k", authorType: "agent", agentId: "c", content: "@Backend can you look?", at },
-        { id: "m2", conversationId: "k", authorType: "agent", agentId: "b", content: "yes", at: at + 1 },
+        { id: "m1", conversationId: "k", authorType: "agent", agentId: "d", content: "check", at, handoffFromAgentId: "q" },
       ],
     });
     const edge = (from: string, to: string) => graph.edges.find((e) => e.from === from && e.to === to);
-    expect(edge("frontend", "backend")?.counts).toEqual({ delegation: 2, chat: 0, review_loop: 0, dependency: 0 });
-    expect(edge("cto", "backend")?.counts.chat).toBe(1);
-    expect(edge("backend", "frontend")?.counts.dependency).toBe(1);
-    // Both the review pass and the QA pass depend on the UI subtask; QA folds
-    // the retired Reviewer role, so they land on one edge.
-    expect(edge("frontend", "qa")?.counts.dependency).toBe(2);
-    expect(edge("qa", "frontend")?.counts.review_loop).toBe(1);
-    expect(edge("qa", "backend")?.counts.review_loop).toBe(1);
-    expect(edge("frontend", "frontend")).toBeUndefined();
-    expect(edge("cto", "frontend")).toBeUndefined();
-    expect(graph.totals).toMatchObject({ delegation: 2, chat: 1, chatInferred: 1, chatRecorded: 0, review_loop: 2, dependency: 3 });
+    expect(edge("data-scientist", "qa")?.counts).toEqual({ delegation: 2, chat: 0, review_loop: 0, dependency: 2 });
+    expect(edge("qa", "data-scientist")?.counts).toEqual({ delegation: 0, chat: 1, review_loop: 2, dependency: 1 });
+    // Both the review pass and the QA pass depend on the UI subtask.
+    expect(edge("qa", "data-scientist")?.counts.dependency).toBe(1);
+    expect(edge("data-scientist", "qa")?.counts.dependency).toBe(2);
+    expect(edge("data-scientist", "data-scientist")).toBeUndefined();
+    expect(edge("qa", "qa")).toBeUndefined();
+    expect(graph.totals).toMatchObject({ delegation: 2, chat: 1, chatInferred: 0, chatRecorded: 1, review_loop: 2, dependency: 3 });
     // Every roster role is drawn, in registry order, even without edges.
-    expect(graph.nodes.map((n) => n.key)).toEqual(["cto", "frontend", "backend", "qa"]);
-    expect(graph.edges[0]).toMatchObject({ from: "frontend", to: "backend", total: 2 });
+    expect(graph.nodes.map((n) => n.key)).toEqual(["qa", "data-scientist"]);
+    expect(graph.edges[0]).toMatchObject({ from: "data-scientist", to: "qa", total: 4 });
   });
 });
 
@@ -263,6 +262,6 @@ describe("load-aware routes in workload and routing", () => {
       roleByAgentName: {},
     });
     expect(view.subtasks[0].loadAware).toMatchObject({ fromRole: "frontend" });
-    expect(view.subtasks[0].why.some((w) => w.startsWith("Load-aware: moved off Frontend"))).toBe(true);
+    expect(view.subtasks[0].why.some((w) => w.startsWith("Load-aware: moved off Assistant"))).toBe(true);
   });
 });

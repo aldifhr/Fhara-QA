@@ -20,9 +20,10 @@ describe("hintFiles", () => {
 });
 
 describe("hintRole", () => {
-  test("one of the fixed role keys, else undefined", () => {
-    expect(hintRole("Frontend")).toBe("frontend");
+  test("the QA role key, a retired alias's successor, else undefined", () => {
+    expect(hintRole("Frontend")).toBe("qa");
     expect(hintRole("qa")).toBe("qa");
+    expect(hintRole("CTO")).toBe("qa");
     expect(hintRole("chef")).toBeUndefined();
     expect(hintRole(undefined)).toBeUndefined();
     expect(hintRole(null)).toBeUndefined();
@@ -43,7 +44,7 @@ describe("buildRoutingHint", () => {
       })
     ).toEqual({
       source: "offer",
-      role: "frontend",
+      role: "qa",
       domain: "frontend",
       topic: "apps/web/page.tsx",
       kind: "implementation",
@@ -53,8 +54,8 @@ describe("buildRoutingHint", () => {
     expect(buildRoutingHint({ source: "command", role: null, domain: null, kind: null, brief: "  ", text: "halo" })).toEqual({ source: "command" });
   });
 
-  test("the CTO is never a hint's role; an unknown role is dropped", () => {
-    expect(buildRoutingHint({ source: "route", role: "cto" }).role).toBeUndefined();
+  test("a retired role resolves to QA; an unknown role is dropped", () => {
+    expect(buildRoutingHint({ source: "route", role: "cto" }).role).toBe("qa");
     expect(buildRoutingHint({ source: "route", role: "chef" }).role).toBeUndefined();
   });
 

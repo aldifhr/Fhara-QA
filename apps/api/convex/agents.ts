@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertAgentAccess, assertProjectAccess, assertRegistryWriteAccess } from "./lib/authz";
 import {
   FIXED_TEAM_SEED_ORDER,
+  RETIRED_ROLE_KEYS,
   REVOKED_DEFAULT_CAPABILITIES,
   ROLES,
   normalizeRoleKey,
@@ -598,6 +599,14 @@ export function syncedTools(_current: readonly string[] | undefined, _role: stri
  */
 export async function syncFixedTeam(ctx: MutationCtx, projectId?: Id<"projects">) {
   const existingAgents = await ctx.db.query("agents").collect();
+
+  // Plan 068: disable agents whose role was removed from the roster. Stamped
+  // once so a later manual re-enable is not overwritten on the next sync.
+  for (const agent of existingAgents) {
+    const role = normalizeRoleKey(agent.role);
+    if (!RETIRED_ROLE_KEYS.includes(role) || agent.retiredAt) continue;
+    await ctx.db.patch(agent._id, { isEnabled: false, status: "idle", retiredAt: Date.now() });
+  }
 
   const createdAgentIds: Id<"agents">[] = [];
   for (const def of FIXED_AGENTS) {

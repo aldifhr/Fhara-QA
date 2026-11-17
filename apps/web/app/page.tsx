@@ -160,12 +160,12 @@ export default function Home() {
 
               {attentionCount > 0 && (
                 <section className="mt-10">
-                  <SectionTitle aside={<Link href="/inbox" className="text-[12.5px] text-ink-3 hover:text-ink">Inbox</Link>}>
+                  <SectionTitle>
                     Needs you
                   </SectionTitle>
                   <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">
                     {data.needsYou.items.slice(0, 6).map((item) => {
-                      // Run-command approvals are allowed/denied in the task thread or Inbox.
+                      // Run-command approvals are allowed/denied in the project thread.
                       const decidable = item.approvalId !== null && item.kind !== "command";
                       const href = projectHref(item.projectId);
                       return (

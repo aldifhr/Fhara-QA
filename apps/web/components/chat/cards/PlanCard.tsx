@@ -260,7 +260,7 @@ export default function PlanCard({ data }: { data: PlanCardData }) {
                           className={`${FIELD} w-36 shrink-0`}
                           aria-label={`Role for ${s.title}`}
                         >
-                          {!d.role && <option value="">No role</option>}
+                          {!d.role && <option value="">Unassigned</option>}
                           {d.role && !review.enabledRoles.includes(d.role) && <option value={d.role}>{roleLabel(d.role)}</option>}
                           {review.enabledRoles.map((role) => (
                             <option key={role} value={role}>{roleLabel(role)}</option>

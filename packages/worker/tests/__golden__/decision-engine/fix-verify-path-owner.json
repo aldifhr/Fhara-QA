@@ -89,9 +89,9 @@
   ],
   "messages": [
     "system: Planned 2 subtasks",
-    "system: Sent to Backend: api",
-    "system: Sent to Frontend: ui",
-    "system: Sent to Backend: Address verification failures (iteration 1)",
+    "system: Sent to Assistant: api",
+    "system: Sent to Assistant: ui",
+    "system: Sent to Assistant: Address verification failures (iteration 1)",
     "-: Done.\n\nVerification: passed."
   ],
   "delegations": [],

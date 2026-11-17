@@ -133,8 +133,6 @@ test("C3 dispatch: runSlash sends /research to createTask with the raw line, /me
   assert.ok(/createMemory\(\{[\s\S]*scope: "project"[\s\S]*pinned: true/.test(memory), "/memory pins a project memory");
   const panel = readFileSync(new URL("../../components/ChatPanel.tsx", import.meta.url), "utf8");
   assert.ok(/sendMessage\(\{[\s\S]*?skillFor\(text\)[\s\S]*?\}\)/.test(panel), "skill lines go through the normal (O3-routed) send");
-  const personal = readFileSync(new URL("../../components/chat/PersonalChatPanel.tsx", import.meta.url), "utf8");
-  assert.ok(/skillInvocation\(text, slashCommands\)/.test(personal));
 });
 
 test("personal scope: no commands until a project is attached, then /task", () => {

@@ -13,3 +13,4 @@ export * from "./classifier";
 export * from "./compaction";
 export * from "./mcpToolLoop";
 export * from "./fix";
+export * from "./playwright";

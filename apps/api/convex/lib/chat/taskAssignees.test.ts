@@ -85,25 +85,25 @@ describe("resolveTaskAssignees", () => {
 });
 
 describe("hintForCommand", () => {
-  test("a typed command: source command, the routed owner's role, files from the text, not hard", () => {
+  test("a typed command: source command, QA hint role, files from the text, not hard", () => {
     const hint = hintForCommand("buatkan halaman login.tsx dengan form", team);
-    expect(hint).toMatchObject({ source: "command", role: "frontend", files: ["login.tsx"] });
+    expect(hint).toMatchObject({ source: "command", role: "qa", files: ["login.tsx"] });
     expect(hint.hard).toBeUndefined();
   });
 
   test("an @mention is binding and wins over the routed owner; a mentioned CTO is not an owner", () => {
-    expect(hintForCommand("buatkan halaman login", team, { mentioned: [team[2]] })).toMatchObject({ source: "mention", role: "backend", hard: true });
+    expect(hintForCommand("buatkan halaman login", team, { mentioned: [team[2]] })).toMatchObject({ source: "mention", role: "qa", hard: true });
     expect(hintForCommand("menurutmu nama produk ini bagus?", team, { mentioned: [team[0]] })).toEqual({ source: "command" });
   });
 
-  test("routed owners passed in are used as given", () => {
+  test("routed owners passed in are used as given; the hint role is QA", () => {
     const hint = hintForCommand("apa saja", team, { routed: { owners: [team[2]], domain: "backend", topic: "README.md" } });
-    expect(hint).toMatchObject({ source: "command", role: "backend", domain: "backend", topic: "README.md" });
+    expect(hint).toMatchObject({ source: "command", role: "qa", domain: "backend", topic: "README.md" });
   });
 
-  test("a legacy role name resolves to its successor, an unknown one is dropped", () => {
-    expect(hintRole("designer")).toBe("designer");
-    expect(hintRole("support")).toBe("backend");
+  test("a legacy role name resolves to QA, an unknown one is dropped", () => {
+    expect(hintRole("designer")).toBe("qa");
+    expect(hintRole("support")).toBe("qa");
     expect(hintRole("reviewer")).toBe("qa");
     expect(hintRole("wizard")).toBeUndefined();
   });

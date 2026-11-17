@@ -10,7 +10,7 @@
  */
 export const ALLOWED_ARGV: Readonly<Record<string, ReadonlyArray<ReadonlyArray<string>>>> = {
   npm: [["run", "test"], ["run", "build"], ["run", "typecheck"]],
-  npx: [["tsc", "--noEmit"]],
+  npx: [["tsc", "--noEmit"], ["playwright", "test", "--reporter=json"]],
   git: [
     ["status"],
     ["status", "--short"],
@@ -47,7 +47,7 @@ export function isCommandAllowed(command: string, args: string[]): boolean {
  */
 const INTERACTIVE_ARGV: Readonly<Record<string, ReadonlyArray<ReadonlyArray<string>>>> = {
   npm: [["run", "test"], ["run", "build"], ["run", "typecheck"]],
-  npx: [["tsc", "--noEmit"]],
+  npx: [["tsc", "--noEmit"], ["playwright", "test", "--reporter=json"]],
 };
 
 export function isInteractiveCommand(command: string, args: string[]): boolean {

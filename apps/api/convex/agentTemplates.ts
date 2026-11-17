@@ -277,8 +277,8 @@ export const saveFromAgent = mutation({
     const role = agent.role.trim().toLowerCase();
     const requested = args.name?.trim();
     const clean = validateTemplateInput({
-      name: requested || (await freeTemplateName(ctx, agent.name.trim() || ROLES.frontend.label)),
-      role: isRoleKey(role) ? role : "frontend",
+      name: requested || (await freeTemplateName(ctx, agent.name.trim() || ROLES.qa.label)),
+      role: isRoleKey(role) ? role : "qa",
       description: (agent.description ?? "").slice(0, 280),
       systemPrompt: agent.systemPrompt ?? "",
     });

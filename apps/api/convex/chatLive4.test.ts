@@ -197,9 +197,9 @@ describe("no speaker prefixes", () => {
     expect(call.system).toContain(NO_SPEAKER_PREFIX_LINE);
   });
 
-  test("a reply in a role the team lacks ('Support: …') still loses the label", async () => {
+  test("a reply prefixed with a fixed role label the team lacks ('Assistant: …') still loses the label", async () => {
     const { t, projectId, designerId } = await setup();
-    reply = () => "Support: Gunakan warna #1a1a1a.";
+    reply = () => "Assistant: Gunakan warna #1a1a1a.";
     const replies = await ask(t, projectId, "@Designer warna teks?", [designerId]);
     expect(replies.find((r) => String(r.agentId) === String(designerId))?.content).toBe("Gunakan warna #1a1a1a.");
   });

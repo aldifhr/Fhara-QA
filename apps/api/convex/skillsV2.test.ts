@@ -190,8 +190,8 @@ describe("dependencies", () => {
     const res = await t.mutation(api.agents.setSkills, { agentId: fe, skillIds: [top] });
     expect(res.skillIds).toEqual([top, mid, base]);
     expect(res.warnings).toEqual([
-      'Also added "Mid" to Frontend: required by "Top".',
-      'Also added "Base" to Frontend: required by "Mid".',
+      'Also added "Mid" to Assistant: required by "Top".',
+      'Also added "Base" to Assistant: required by "Mid".',
     ]);
 
     // Role assignment and "Used by" pull dependencies in too.
@@ -199,7 +199,7 @@ describe("dependencies", () => {
     const assigned = await t.mutation(api.skills.assignRoles, { skillId: mid, roles: ["backend", "frontend"] });
     expect(assigned.added).toBe(1);
     expect((await t.run((ctx) => ctx.db.get(be)))?.skillIds).toEqual([mid, base]);
-    expect(assigned.warnings).toEqual(['Also added "Base" to Backend: required by "Mid".']);
+    expect(assigned.warnings).toEqual(['Also added "Base" to Assistant: required by "Mid".']);
   });
 
   test("removing a required skill is allowed but warns; it is not silently re-added", async () => {
@@ -210,7 +210,7 @@ describe("dependencies", () => {
     await t.mutation(api.agents.setSkills, { agentId: fe, skillIds: [top] });
     const res = await t.mutation(api.agents.setSkills, { agentId: fe, skillIds: [top] /* Base unticked */ });
     expect(res.skillIds).toEqual([top]);
-    expect(res.warnings).toEqual(['Frontend still has "Top", which requires "Base".']);
+    expect(res.warnings).toEqual(['Assistant still has "Top", which requires "Base".']);
     // Removing both is quiet.
     expect((await t.mutation(api.agents.setSkills, { agentId: fe, skillIds: [] })).warnings).toEqual([]);
   });
@@ -227,7 +227,7 @@ describe("dependencies", () => {
     await t.mutation(api.agents.setSkills, { agentId: fe, skillIds: [c] });
     const res = await t.mutation(api.skills.update, { skillId: c, requires: [b] });
     expect((await t.run((ctx) => ctx.db.get(fe)))?.skillIds).toEqual([c, b, a]);
-    expect(res.warnings).toContain('Also added "B" to Frontend: required by "C".');
+    expect(res.warnings).toContain('Also added "B" to Assistant: required by "C".');
     const dropped = await t.mutation(api.skills.update, { skillId: c, requires: [] });
     expect(dropped.warnings).toEqual(['"C" no longer requires "B"; agents keep it until you remove it.']);
 
@@ -268,7 +268,8 @@ describe("permissions (advisory only)", () => {
     expect([...qaPerms].sort()).toEqual(["browser", "read_file", "run_command"]);
     expect(agentPermissions({ role: "cto", supportedTools: ["read_file", "write_file"] }).has("write_file")).toBe(false);
     expect(missingPermissions(["run_command", "browser"], { role: "qa" })).toEqual([]);
-    expect(missingPermissions(["run_command", "browser"], { role: "backend" })).toEqual(["browser"]);
+    // A non-fixed role with no declared tools is read-only; with run_command it still lacks browser.
+    expect(missingPermissions(["run_command", "browser"], { role: "data-wrangler", supportedTools: ["read_file", "run_command"] })).toEqual(["browser"]);
   });
 
   test("assigning a skill that needs run_command to QA warns and grants nothing", async () => {
@@ -283,7 +284,7 @@ describe("permissions (advisory only)", () => {
     expect((await t.query(api.skills.get, { skillId }))?.permissions).toEqual(["run_command"]);
 
     const res = await t.mutation(api.skills.assignRoles, { skillId, roles: ["qa", "backend"] });
-    expect(res.warnings).toEqual(['QA lacks run commands, which "Run tests" needs. Skills never grant tools.']);
+    expect(res.warnings).toEqual(['Assistant lacks run commands, which "Run tests" needs. Skills never grant tools.']);
     expect((await t.run((ctx) => ctx.db.get(qa)))?.supportedTools).toEqual(["read_file"]);
     expect((await t.run((ctx) => ctx.db.get(backend)))?.supportedTools).toEqual(["read_file", "write_file", "run_command"]);
     const listed = (await t.query(api.skills.list, {}))[0];
@@ -293,7 +294,7 @@ describe("permissions (advisory only)", () => {
     const other = await t.mutation(api.skills.create, { name: "Browse", instructions: "b" });
     await t.mutation(api.agents.setSkills, { agentId: backend, skillIds: [other] });
     const edit = await t.mutation(api.skills.update, { skillId: other, permissions: ["browser"] });
-    expect(edit.warnings).toEqual(['Backend lacks browser, which "Browse" needs. Skills never grant tools.']);
+    expect(edit.warnings).toEqual(['Assistant lacks browser, which "Browse" needs. Skills never grant tools.']);
 
     // The worker receives the agent row unchanged: supportedTools never widened.
     const run = await t.run(async (ctx) => {

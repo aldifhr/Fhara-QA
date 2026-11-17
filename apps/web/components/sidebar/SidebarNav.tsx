@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { useQuery } from "convex/react";
-import { api } from "@/api/convex/_generated/api";
-import { readUiPref } from "@/lib/uiPrefs";
+import { useState, type ComponentType, type ReactNode } from "react";
 
 export type NavIcon = ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
 
@@ -135,54 +132,3 @@ export function RailItem({
   );
 }
 
-/**
- * Settings → Devices: a desktop notification when the "needs you" count
- * goes up while this window is in the background. Off unless the user
- * turned it on (and the browser granted permission).
- */
-function useAttentionNotification(total: number | undefined) {
-  const previous = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (total === undefined) return;
-    const before = previous.current;
-    previous.current = total;
-    if (before === undefined || total <= before) return;
-    if (!readUiPref("notifyAttention")) return;
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    if (document.visibilityState === "visible" && document.hasFocus()) return;
-    try {
-      const note = new Notification("Fhara", {
-        body: total === 1 ? "1 thing needs you" : `${total} things need you`,
-        tag: "fhara-needs-you",
-      });
-      note.onclick = () => {
-        window.focus();
-        window.location.assign("/inbox");
-      };
-    } catch {
-      /* notifications unavailable */
-    }
-  }, [total]);
-}
-
-/** The "needs you" total for the Inbox row (count) and rail (dot); also drives the desktop notification. */
-export function InboxNav({
-  icon,
-  active,
-  rail,
-  onNavigate,
-}: {
-  icon: NavIcon;
-  active: boolean;
-  rail: boolean;
-  onNavigate?: () => void;
-}) {
-  const needs = useQuery(api.shell.needsYou, {});
-  useAttentionNotification(needs?.total);
-  const total = needs?.total ?? 0;
-  return rail ? (
-    <RailItem icon={icon} label={total ? `Inbox (${total})` : "Inbox"} href="/inbox" active={active} dot={total > 0} onClick={onNavigate} />
-  ) : (
-    <NavRow icon={icon} label="Inbox" href="/inbox" active={active} count={total} onClick={onNavigate} />
-  );
-}

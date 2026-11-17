@@ -105,7 +105,7 @@ export function routeCapability(
     : scored;
   if (eligible.length > 0) return eligible[0].agent;
   if (options.allowFallback !== true) return null;
-  const pool = enabled.filter((agent) => resolveRoleKey(agent.role ?? "") !== "cto");
+  const pool = enabled;
   const writers = WRITE_CAPABILITIES.has(normalized)
     ? pool.filter((agent) => canWriteAny(permissionsForAgent(agent)))
     : pool;

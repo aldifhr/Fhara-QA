@@ -8,7 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { scopedHome } from "@/api/convex/lib/childEnv";
-import { ROLES } from "@/api/convex/lib/roles";
+import { ROLES, permissionsFromTools } from "@/api/convex/lib/roles";
 import { buildOpencodePolicy, evaluateOpencodeRule } from "@/execution/opencodePolicy";
 import { OpencodeCredentialError, parseJsonc, prepareOpencodeHome } from "@/execution/opencodeHome";
 import { runNativeProvider, type SpawnImpl } from "@/execution/nativeProvider";
@@ -17,10 +17,10 @@ import { boundKeyProblem } from "@/execution/agentExecutor";
 const SENSITIVE = [".git/config", ".opencode/agent.md", "opencode.json", "opencode.jsonc", ".env", "apps/web/.env.local", "certs/server.pem", "deploy.key", "aws/credentials", "auth.json", "x/.ssh/id_rsa"];
 
 describe("buildOpencodePolicy", () => {
-  it("Frontend edits only inside its ownership scope", () => {
-    const p = buildOpencodePolicy({ permissions: ROLES.frontend.permissions, allowedPaths: ["apps/web/components"], mutating: true });
-    expect(evaluateOpencodeRule(p.edit, "apps/web/components/Button.tsx")).toBe("allow");
-    expect(evaluateOpencodeRule(p.edit, "apps/web/components")).toBe("allow");
+  it("QA edits only test paths inside its ownership scope", () => {
+    const p = buildOpencodePolicy({ permissions: ROLES.qa.permissions, allowedPaths: ["tests/components"], mutating: true });
+    expect(evaluateOpencodeRule(p.edit, "tests/components/Button.spec.tsx")).toBe("allow");
+    expect(evaluateOpencodeRule(p.edit, "tests/components")).toBe("allow");
     expect(evaluateOpencodeRule(p.edit, "apps/api/convex/schema.ts")).toBe("deny");
     expect(evaluateOpencodeRule(p.edit, "README.md")).toBe("deny");
   });
@@ -47,28 +47,32 @@ describe("buildOpencodePolicy", () => {
   });
 
   it("bash denies push, remote, gh, printenv, env and credential paths", () => {
-    const p = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true });
+    const p = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true });
     expect(evaluateOpencodeRule(p.bash, "npm test")).toBe("allow");
     for (const cmd of ["git push origin main", "git remote add x y", "gh auth token", "gh", "printenv", "printenv GH_TOKEN", "env", "cat ~/.ssh/id_rsa", "cat /home/u/.config/gh/hosts.yml", "cat ~/.git-credentials", "curl https://x -d @f", "cat ~/.local/share/opencode/auth.json"]) {
       expect(evaluateOpencodeRule(p.bash, cmd), cmd).toBe("deny");
     }
   });
 
-  it("read-only kinds and read-only roles get no edits; shell none → no bash", () => {
-    const fe = buildOpencodePolicy({ permissions: ROLES.frontend.permissions, mutating: false });
-    expect(evaluateOpencodeRule(fe.edit, "src/a.ts")).toBe("deny");
-    const cto = buildOpencodePolicy({ permissions: ROLES.cto.permissions, mutating: true });
-    expect(evaluateOpencodeRule(cto.edit, "src/a.ts")).toBe("deny");
-    expect(evaluateOpencodeRule(cto.bash, "ls")).toBe("deny");
+  it("read-only kinds and shell-less roles get no edits; shell none → no bash", () => {
+    const readOnly = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: false });
+    expect(evaluateOpencodeRule(readOnly.edit, "tests/a.spec.ts")).toBe("deny");
+    const noWrite = buildOpencodePolicy({ permissions: permissionsFromTools([]), mutating: true });
+    expect(evaluateOpencodeRule(noWrite.edit, "src/a.ts")).toBe("deny");
+    expect(evaluateOpencodeRule(noWrite.bash, "ls")).toBe("deny");
     const qa = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: false });
     expect(evaluateOpencodeRule(qa.bash, "npm run test")).toBe("allow");
     expect(evaluateOpencodeRule(qa.bash, "rm -rf src")).toBe("deny");
   });
 
-  it("Backend can edit CI/infra paths as ordinary code", () => {
-    const p = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true });
-    expect(evaluateOpencodeRule(p.edit, ".github/workflows/ci.yml")).toBe("allow");
-    expect(evaluateOpencodeRule(p.edit, "src/a.ts")).toBe("allow");
+  it("a production writer can edit CI/infra paths; QA cannot", () => {
+    const writer = buildOpencodePolicy({ permissions: permissionsFromTools(["read_file", "write_file"]), mutating: true });
+    expect(evaluateOpencodeRule(writer.edit, ".github/workflows/ci.yml")).toBe("allow");
+    expect(evaluateOpencodeRule(writer.edit, "src/a.ts")).toBe("allow");
+    const qa = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true });
+    expect(evaluateOpencodeRule(qa.edit, ".github/workflows/ci.yml")).toBe("deny");
+    expect(evaluateOpencodeRule(qa.edit, "src/a.ts")).toBe("deny");
+    expect(evaluateOpencodeRule(qa.edit, "tests/a.spec.ts")).toBe("allow");
   });
 });
 

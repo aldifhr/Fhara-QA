@@ -15,23 +15,24 @@ const modules = import.meta.glob("./**/*.ts");
 
 describe("agent templates helpers", () => {
   test("nextAgentName follows the New agent rule and skips taken numbers", () => {
-    expect(nextAgentName("frontend", [])).toBe("Frontend");
-    expect(nextAgentName("frontend", [{ name: "Frontend", role: "frontend" }])).toBe("Frontend 2");
+    // A retired role alias resolves to the QA "Assistant" label.
+    expect(nextAgentName("frontend", [])).toBe("Assistant");
+    expect(nextAgentName("qa", [])).toBe("Assistant");
+    expect(nextAgentName("qa", [{ name: "Assistant", role: "qa" }])).toBe("Assistant 2");
     expect(
-      nextAgentName("frontend", [
-        { name: "Frontend", role: "frontend" },
-        { name: "Frontend 2", role: "frontend" },
+      nextAgentName("qa", [
+        { name: "Assistant", role: "qa" },
+        { name: "Assistant 2", role: "qa" },
       ])
-    ).toBe("Frontend 3");
-    // "Frontend 2" was deleted earlier but "Frontend 3" is still around.
+    ).toBe("Assistant 3");
+    // "Assistant 2" was deleted earlier but "Assistant 3" is still around.
     expect(
-      nextAgentName("frontend", [
-        { name: "Frontend", role: "frontend" },
-        { name: "Frontend 2", role: "frontend" },
-        { name: "Frontend 3", role: "qa" },
+      nextAgentName("qa", [
+        { name: "Assistant", role: "qa" },
+        { name: "Assistant 2", role: "qa" },
+        { name: "Assistant 3", role: "qa" },
       ])
-    ).toBe("Frontend 4");
-    expect(nextAgentName("qa", [{ name: "Frontend", role: "frontend" }])).toBe("QA");
+    ).toBe("Assistant 4");
   });
 
   test("matchSkillsByName is case-insensitive, ordered, and skips unknowns", () => {
@@ -54,7 +55,7 @@ describe("agentTemplates functions", () => {
   test("list returns built-ins with skills matched by name, then custom templates", async () => {
     const t = convexTest(schema, modules);
     await t.mutation(api.skills.seedDefaults, {});
-    await t.mutation(api.agentTemplates.create, { name: "Mine", role: "backend" });
+    await t.mutation(api.agentTemplates.create, { name: "Mine", role: "qa" });
     const list = await t.query(api.agentTemplates.list, {});
     expect(list.slice(0, BUILT_IN_TEMPLATES.length).every((x) => x.builtIn)).toBe(true);
     const react = list.find((x) => x.id === builtInTemplateId("react-frontend"))!;
@@ -65,7 +66,7 @@ describe("agentTemplates functions", () => {
     expect(mine.name).toBe("Mine");
     expect(mine.builtIn).toBe(false);
     // Empty prompt falls back to the role default.
-    expect(mine.systemPrompt).toContain("Backend Developer");
+    expect(mine.systemPrompt).toContain("QA automation assistant");
   });
 
   test("createAgentFromTemplate names, prefills and joins the project", async () => {
@@ -75,24 +76,24 @@ describe("agentTemplates functions", () => {
       ctx.db.insert("projects", { name: "P", workspacePath: "p", agentIds: [] } as never)
     );
     await t.run((ctx) =>
-      ctx.db.insert("agents", { name: "Frontend", role: "frontend", status: "idle", isEnabled: true })
+      ctx.db.insert("agents", { name: "Assistant", role: "qa", status: "idle", isEnabled: true })
     );
     const templateId = builtInTemplateId("react-frontend");
     const first = await t.mutation(api.agentTemplates.createAgentFromTemplate, { templateId, projectId });
-    expect(first.name).toBe("Frontend 2");
+    expect(first.name).toBe("Assistant 2");
     const agent = await t.run((ctx) => ctx.db.get(first.agentId));
     const template = BUILT_IN_TEMPLATES.find((x) => x.key === "react-frontend")!;
-    expect(agent?.role).toBe("frontend");
+    expect(agent?.role).toBe("qa");
     expect(agent?.systemPrompt).toBe(template.systemPrompt);
     expect(agent?.skillIds).toHaveLength(2);
     expect(agent?.avatarParams).toEqual(template.avatarParams);
-    expect(agent?.capabilities).toEqual([...ROLES.frontend.capabilities]);
+    expect(agent?.capabilities).toEqual([...ROLES.qa.capabilities]);
     expect(agent?.isEnabled).toBe(true);
     const project = await t.run((ctx) => ctx.db.get(projectId));
     expect(project?.agentIds).toEqual([first.agentId]);
 
     const second = await t.mutation(api.agentTemplates.createAgentFromTemplate, { templateId });
-    expect(second.name).toBe("Frontend 3");
+    expect(second.name).toBe("Assistant 3");
     await expect(
       t.mutation(api.agentTemplates.createAgentFromTemplate, { templateId: "builtin:nope" })
     ).rejects.toThrow(/not found/);
@@ -120,7 +121,7 @@ describe("agentTemplates functions", () => {
     expect(again.name).toBe("QA 2");
 
     const made = await t.mutation(api.agentTemplates.createAgentFromTemplate, { templateId: saved.templateId });
-    expect(made.name).toBe("QA 2");
+    expect(made.name).toBe("Assistant 2");
     const agent = await t.run((ctx) => ctx.db.get(made.agentId));
     expect(agent?.systemPrompt).toBe("Test everything twice.");
     expect(agent?.skillIds).toEqual([skillId]);

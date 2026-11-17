@@ -113,18 +113,10 @@ export function buildOrgChart(agents: OrgAgentInput[], registry: OrgRegistryInpu
     };
   };
 
-  const ctoAgents = byRole.get("cto") ?? [];
-  const root = ctoAgents[0] ? agentNode(ctoAgents[0], "cto", true, null) : vacantNode("cto", null);
+  const qaAgents = byRole.get("qa") ?? [];
+  const root = qaAgents[0] ? agentNode(qaAgents[0], "qa", true, null) : vacantNode("qa", null);
   nodes.push(root);
-  // A second CTO agent reports to the first.
-  for (const extra of ctoAgents.slice(1)) nodes.push(agentNode(extra, "cto", true, root.key));
-
-  for (const key of ROLE_KEYS) {
-    if (key === "cto") continue;
-    const list = byRole.get(key) ?? [];
-    if (list.length === 0) nodes.push(vacantNode(key, root.key));
-    for (const a of list) nodes.push(agentNode(a, key, true, root.key));
-  }
+  for (const extra of qaAgents.slice(1)) nodes.push(agentNode(extra, "qa", true, root.key));
   const fixedKeys = new Set<string>(ROLE_KEYS);
   const custom = [...byRole.entries()]
     .filter(([key]) => !fixedKeys.has(key))

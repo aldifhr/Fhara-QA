@@ -36,7 +36,7 @@
   ],
   "messages": [
     "system: Planned 1 subtask",
-    "system: Sent to Frontend: implement"
+    "system: Sent to Assistant: implement"
   ],
   "delegations": [],
   "pauses": [],

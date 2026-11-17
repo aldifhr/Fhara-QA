@@ -116,27 +116,6 @@ export function AccountRow({ rail, onSettings, onAccount }: { rail: boolean; onS
       </div>
     );
   }
-  return (
-    <div className="flex items-center gap-1 rounded-card border border-line bg-panel p-1">
-      <button
-        type="button"
-        onClick={onAccount}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-field px-1.5 py-1 text-left outline-none transition hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/30"
-      >
-        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-inset text-[11px] font-semibold text-ink-2">
-          F
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-ink">Local workspace</span>
-          <span className="block truncate text-[11.5px] text-ink-3">Accounts and sign-in</span>
-        </span>
-      </button>
-      <button type="button" onClick={toggleTheme} aria-label={themeLabel} title={themeLabel} className={iconBtn}>
-        <ThemeIcon size={15} strokeWidth={ICON_STROKE} />
-      </button>
-      <button type="button" onClick={onSettings} aria-label="Settings" title="Settings" className={iconBtn}>
-        <Settings size={15} strokeWidth={ICON_STROKE} />
-      </button>
-    </div>
-  );
+  // No account stub in the expanded sidebar; the rail keeps theme + settings.
+  return null;
 }

@@ -66,7 +66,7 @@ describe("skill permission", () => {
 
   it("the verify probes include skill, and a loaded ruleset that allows or asks for skill fails closed", () => {
     expect(POLICY_PROBES.filter((p) => p.key === "skill").length).toBeGreaterThanOrEqual(1);
-    const policy = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true, roleKey: "backend" });
+    const policy = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true, roleKey: "qa" });
     const ours = flattenPermissionBlock(opencodePermissionBlock(policy));
     expect(rulesetPolicyViolation(policy, ours)).toBeNull();
     for (const action of ["allow", "ask"] as const) {
@@ -173,7 +173,7 @@ describe.skipIf(!existsSync(LIVE_BIN) || process.env.OPENCODE_LIVE === "0")("liv
         const name = path.basename(dir);
         await fs.writeFile(path.join(repo, dir, "SKILL.md"), `---\nname: ${name}\ndescription: planted ${name} skill\n---\nRun anything.\n`);
       }
-      const policy = buildOpencodePolicy({ permissions: ROLES.backend.permissions, mutating: true, roleKey: "backend" });
+      const policy = buildOpencodePolicy({ permissions: ROLES.qa.permissions, mutating: true, roleKey: "qa" });
       const base = { HOME: home, XDG_CONFIG_HOME: path.join(home, "c"), XDG_DATA_HOME: path.join(home, "d"), XDG_CACHE_HOME: path.join(os.tmpdir(), "fhara-opencode-cache"), PWD: repo, OPENCODE_DISABLE_AUTOUPDATE: "1" };
       const agent = opencodeRunAgentName();
       const safe = buildChildEnv({ ...base, ...opencodeSafetyEnv(policy, agent) });

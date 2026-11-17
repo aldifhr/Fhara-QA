@@ -38,13 +38,10 @@ const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 4000;
 const CRITERION_MAX = 300;
 
-/** Kinds a reassigned role implies; writer roles fall back to code_change. */
+/** Kinds a role reassignment implies. QA stays in its own kinds. */
 const ROLE_KIND: Partial<Record<RoleKey, ValidatedSubtaskKind>> = {
   qa: "qa",
-  cto: "analysis",
 };
-const WRITER_ROLES = new Set<RoleKey>(["frontend", "backend"]);
-const NON_WRITING_KINDS = new Set<string>(["review", "qa", "research", "shell", "analysis", "audit"]);
 
 /** The capability a role's subtask is routed by (its first seeded capability). */
 export function capabilityForRoleKey(role: RoleKey): string {
@@ -63,10 +60,7 @@ export function roleKeyForCapability(capability: string): RoleKey | null {
 }
 
 function kindForRole(role: RoleKey, current: string): ValidatedSubtaskKind {
-  const implied = ROLE_KIND[role];
-  if (implied) return implied;
-  if (WRITER_ROLES.has(role) && NON_WRITING_KINDS.has(current)) return "code_change";
-  return current as ValidatedSubtaskKind;
+  return ROLE_KIND[role] ?? (current as ValidatedSubtaskKind);
 }
 
 type RawSubtask = Record<string, unknown> & { key: string; dependencies: string[] };

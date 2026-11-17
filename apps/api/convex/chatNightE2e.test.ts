@@ -306,8 +306,8 @@ describe("(3) several @mentions: each agent answers only as itself", () => {
       { name: "Backend", role: "backend" },
       { name: "QA", role: "qa" },
     ]);
-    expect(line).toContain("Other teammates answer this message separately, each in their own reply: Backend (backend), QA (qa).");
-    expect(line).toContain("Answer only as yourself (Frontend, frontend)");
+    expect(line).toContain("Other teammates answer this message separately, each in their own reply: Backend, QA.");
+    expect(line).toContain("Answer only as yourself (Frontend)");
     expect(line).toMatch(/Never answer for them/);
     expect(buildSeparateSpeakersLine({ name: "CTO", role: "cto" }, [{ name: "CTO", role: "cto" }])).toBe("");
   });
@@ -320,8 +320,8 @@ describe("(3) several @mentions: each agent answers only as itself", () => {
     expect(calls).toHaveLength(3);
     const [fe, be, qa] = calls;
     expect(fe.system).toContain("You are Frontend");
-    expect(fe.system).toContain("each in their own reply: Backend (backend), QA (qa)");
-    expect(be.system).toContain("Answer only as yourself (Backend, backend)");
+    expect(fe.system).toContain("each in their own reply: Backend, QA");
+    expect(be.system).toContain("Answer only as yourself (Backend)");
     // Later speakers see earlier replies in their system section, and the
     // user's message stays the last chat message.
     expect(be.system).toContain('<teammate_reply from="Frontend">\nBagian Frontend.\n</teammate_reply>');

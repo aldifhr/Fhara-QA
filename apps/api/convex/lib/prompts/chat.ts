@@ -21,9 +21,9 @@ function clip500(text: string): string {
   return text.length > 500 ? text.slice(0, 500) + "..." : text;
 }
 
-/** Shared identity line: agents answer as their role, never as the model. */
+/** Shared identity line: the assistant answers as itself, never as the model. */
 const NOT_THE_MODEL =
-  "You are NOT the underlying LLM model. Never name the model (e.g. \"Crouton Alpha\") or claim to be the provider — always answer as your assigned role.";
+  "You are NOT the underlying LLM model. Never name the model (e.g. \"Crouton Alpha\") or claim to be the provider — always answer as the assistant.";
 
 /** Stage B intent classifier. */
 export const INTENT_CLASSIFIER_SYSTEM = "Classify intent. Return JSON only.";
@@ -53,7 +53,7 @@ export function buildIntentClassifierPrompt(
     ...(routing
       ? [
           "Teammates:",
-          ...routing.team.map((a) => `- id=${a.id} name=${a.name} role=${a.role}`),
+          ...routing.team.map((a) => `- id=${a.id} name=${a.name}`),
           routing.historyLines?.length ? ["Recent messages:", ...routing.historyLines].join("\n") : "",
           routing.contextSummary ? `Earlier context: ${clip500(routing.contextSummary)}` : "",
         ]
@@ -68,7 +68,7 @@ export function buildIntentClassifierPrompt(
 /** Greeting fast path: one short in-persona hello, minimal context. */
 export function buildGreetingSystem(agent: Persona, projectName: string): string {
   return [
-    `You are ${agent.name}, a ${agent.role} on the agent team of project "${projectName}".`,
+    `You are ${agent.name}, the assistant for project "${projectName}".`,
     NOT_THE_MODEL,
     agent.systemPrompt ?? "",
     "Greet the user briefly in your own persona, same language as the user. One short sentence, no plan, no delegation, no Create task instructions.",
@@ -88,10 +88,10 @@ export function buildSeparateSpeakersLine(
 ): string {
   const others = participants.filter((a) => a.name !== agent.name);
   if (others.length === 0) return "";
-  const list = others.map((a) => `${a.name} (${a.role})`).join(", ");
+  const list = others.map((a) => `${a.name}`).join(", ");
   return [
     `Other teammates answer this message separately, each in their own reply: ${list}.`,
-    `Answer only as yourself (${agent.name}, ${agent.role}), from your own role. Never answer for them, speak for them, guess what they will say, or write sections or lines labelled with their names.`,
+    `Answer only as yourself (${agent.name}). Never answer for them, speak for them, guess what they will say, or write sections or lines labelled with their names.`,
   ].join(" ");
 }
 
@@ -118,7 +118,7 @@ export function buildRequestSubjectGuard(projectName: string): string {
  * short-reply and Create-task rules below win (8426134).
  */
 export const ROLE_PROMPT_CHAT_SCOPE =
-  "Your role instructions above describe how you work on tasks. In this chat the reply rules below win: keep to their length and format, and do not use task-delivery sections (output formats, completion reports, final status) unless the user asks for one. Language rules in your role instructions apply to files and UI copy you write; in chat, reply in the user's language. Any stack, framework or component named in those instructions (React, Next.js, TypeScript, Convex) is how this project's tasks are done, not a rule for this reply: answer about the stack and artifact the USER asked for, and use the project's stack only when the request is about its existing code.";
+  "Your instructions above describe how you work on tasks. In this chat the reply rules below win: keep to their length and format, and do not use task-delivery sections (output formats, completion reports, final status) unless the user asks for one. Language rules in your instructions apply to files and UI copy you write; in chat, reply in the user's language. Any stack, framework or component named in those instructions (React, Next.js, TypeScript, Convex) is how this project's tasks are done, not a rule for this reply: answer about the stack and artifact the USER asked for, and use the project's stack only when the request is about its existing code.";
 
 /** Opening lines of a chat-loop reply: identity, persona, repo grounding. */
 export function buildChatPersonaLines(
@@ -129,7 +129,7 @@ export function buildChatPersonaLines(
   repoTools = false
 ): string[] {
   return [
-    `You are ${agent.name}, a ${agent.role} on the agent team of project "${projectName}".`,
+    `You are ${agent.name}, the assistant for project "${projectName}".`,
     buildSeparateSpeakersLine(agent, participants),
     NOT_THE_MODEL,
     agent.systemPrompt ?? "",
@@ -243,7 +243,7 @@ export function buildRoutedOwnerNotice(hasRepoTools: boolean): string {
 
 /** CTO chat conduct: delegate deep work, stay short, never speak for a teammate. */
 export const CTO_DELEGATION_GUIDANCE =
-  "Keep your own replies short. Deep work (a code audit, a test check, research, a design or security review) belongs to the teammate whose area it is: bring them in with @Name instead of doing it at length yourself. Only @mention when the request is genuinely in that teammate's area; a question about your role, your capabilities or general advice is yours to answer alone. Never write lines as a teammate, speak for them, or invent what they found.";
+  "Keep your own replies short. Deep work (a code audit, a test check, research, a design or security review) belongs to the teammate whose area it is: bring them in with @Name instead of doing it at length yourself. Only @mention when the request is genuinely in that teammate's area; a question about your work, your capabilities or general advice is yours to answer alone. Never write lines as a teammate, speak for them, or invent what they found.";
 
 /** One chat history row as getContext returns it. */
 export type ChatHistoryRow = { authorType: string; content: string; agentId?: string; voice?: string };
@@ -257,7 +257,7 @@ function clipTurn(text: string): string {
 
 /** Rule for every chat reply: the bubble already shows who is speaking. */
 export const NO_SPEAKER_PREFIX_LINE =
-  "Never start your reply with a name, role or speaker label (no \"CTO:\", \"Reviewer:\", \"**Name:**\"): the chat already shows who is speaking. Start directly with the answer.";
+  "Never start your reply with a name or speaker label (no \"CTO:\", \"Reviewer:\", \"**Name:**\"): the chat already shows who is speaking. Start directly with the answer.";
 
 /** A teammate's earlier reply, quoted as context without a "Name:" label. */
 export function teammateContextBlock(name: string | undefined, text: string): string {
@@ -401,7 +401,7 @@ export function buildPlanningGuidance(
   if (opts.isOrchestrator) {
     return [
       "You are the CTO: you own architecture and technical direction (repo shape, data model, service split, priorities). Give a clear decision with the reasons.",
-      "Answer briefly. Only when the user actually asks for work to be done (create or change files, run checks), propose a short plan and tell them to use Create task. For a question about your role, your capabilities, architecture or advice, answer it directly: never mention Create task and never @mention a teammate unless the question is genuinely in that teammate's area. Do not pretend to have executed code. Respond in plain text.",
+      "Answer briefly. Only when the user actually asks for work to be done (create or change files, run checks), propose a short plan and tell them to use Create task. For a question about your work, your capabilities, architecture or advice, answer it directly: never mention Create task and never @mention a teammate unless the question is genuinely in that teammate's area. Do not pretend to have executed code. Respond in plain text.",
       CTO_DELEGATION_GUIDANCE,
     ];
   }
@@ -493,8 +493,8 @@ export function buildHandoffGuidance(
   if (others.length === 0) return [];
   return [
     `Teammates on this project: ${others.map((a) => `@${a.name}`).join(", ")}.`,
-    "Answer the user first. Writing @Name in your reply DOES bring that teammate into this chat to answer the user's latest message next: @mention only the roles whose work is actually needed (at most three), and address them with a concrete request in the same sentence. When a teammate's specialty is only being described, write the role name WITHOUT @.",
-    "Do not ask the user for permission to bring a teammate in, and do not @mention yourself. A handoff is a short opinion in chat, not execution; a question about your own role or capabilities needs no handoff and no Create task instruction.",
+    "Answer the user first. Writing @Name in your reply DOES bring that teammate into this chat to answer the user's latest message next: @mention only the assistant whose work is actually needed (at most three), and address them with a concrete request in the same sentence. When a teammate's specialty is only being described, write the name WITHOUT @.",
+    "Do not ask the user for permission to bring a teammate in, and do not @mention yourself. A handoff is a short opinion in chat, not execution; a question about your own work or capabilities needs no handoff and no Create task instruction.",
     repo.hasRepoTools ? SELF_VERIFY_LINE : noRepoAccessHandoffLine(repo.offReason ?? ""),
   ];
 }
@@ -533,9 +533,9 @@ export function buildPersonalModeSection(agent: { role: string }, opts: { skillT
   return [
     "## Personal chat",
     "This is a private one-to-one chat with the user: brainstorming, technical discussion, learning, questions and general help.",
-    area ? `Your area as ${agent.role}: ${area}` : "",
+    area ? `Your area: ${area}` : "",
     "Help broadly with your area and with general technical questions in any language, framework or stack the user brings up, not only the stack named in your task instructions. Answer directly and naturally, in the user's language.",
-    "Your role boundaries limit what you DO in tasks (writing code, running commands), not what you can talk about. Never recite your scope, boundaries or what you are not, unless the user asks what you can't do.",
+    "Your boundaries limit what you DO in tasks (writing code, running commands), not what you can talk about. Never recite your scope, boundaries or what you are not, unless the user asks what you can't do.",
     "No project, repository or workspace is attached to this chat. Do not mention the repo, attaching a project, or that you have not checked anything, unless the user asks about their own code or files or wants work done on them; then say once, briefly, that attaching a project (Attach project) lets you read it.",
     "If a question is clearly another teammate's specialty, you may name that role (without @) in one short line, and still help as far as you can.",
     opts.skillTool ? "" : "You have no tools in this reply: never output a tool call or JSON.",

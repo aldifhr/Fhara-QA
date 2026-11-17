@@ -20,7 +20,7 @@
     "budget.exhausted"
   ],
   "messages": [
-    "system: Sent to Frontend: implement"
+    "system: Sent to Assistant: implement"
   ],
   "delegations": [],
   "pauses": [],

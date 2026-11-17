@@ -4,9 +4,9 @@
  * policy without touching user choices. A prompt is replaced only when it
  * is exactly an earlier seed (D10). Each patched row leaves an audit entry.
  *
- * Retired roles (reviewer, researcher, devops, support) were removed from
- * the role system entirely; the sync no longer disables or retires them.
- * Old stored agents with those roles are simply ignored by the sync.
+ * Plan 068: the roster is QA-only. Retired roles (CTO, Frontend, Backend,
+ * Designer, …) are disabled and stamped `retiredAt` once by the sync so a
+ * stale row can never be routed; their stored prompts are left untouched.
  */
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
@@ -32,7 +32,33 @@ describe("syncedTools", () => {
 });
 
 describe("fixed-team sync: unedited seed prompts and fresh seeds", () => {
-  test("keeps edited prompts, replaces unedited seeds, and audits live-role patches", async () => {
+  test("replaces an unedited QA seed with the current template and audits the patch", async () => {
+    const t = makeT();
+    const qaId = await t.run(async (ctx) =>
+      await ctx.db.insert("agents", {
+        name: "Assistant", role: "qa", status: "idle", isEnabled: true, description: "d",
+        capabilities: [...ROLES.qa.capabilities], supportedTools: [...ROLES.qa.defaultTools],
+        systemPrompt: PREVIOUS_SEED_PROMPTS.qa![0],
+      })
+    );
+
+    await t.mutation(internal.agents.syncFixedTeamInternal, {});
+    const row = await t.run(async (ctx) => ({
+      qa: await ctx.db.get(qaId),
+      audit: await ctx.db.query("audit").collect(),
+    }));
+    expect(row.qa?.systemPrompt).toBe(AGENT_SEED_PROMPTS.qa);
+    const synced = row.audit.filter((a) => a.action === "agent.sync" && a.target === "Assistant");
+    expect(synced).toHaveLength(1);
+    expect((synced[0].details as { changed: string[] }).changed).toContain("systemPrompt");
+
+    // Idempotent: a second sync patches nothing more.
+    await t.mutation(internal.agents.syncFixedTeamInternal, {});
+    const again = await t.run(async (ctx) => (await ctx.db.query("audit").collect()).filter((a) => a.action === "agent.sync"));
+    expect(again).toHaveLength(synced.length);
+  });
+
+  test("keeps an edited QA prompt and disables retired-role agents with a stamp", async () => {
     const t = makeT();
     const ids = await t.run(async (ctx) => ({
       reviewer: await ctx.db.insert("agents", {
@@ -41,8 +67,8 @@ describe("fixed-team sync: unedited seed prompts and fresh seeds", () => {
         systemPrompt: "my own review prompt",
       }),
       qa: await ctx.db.insert("agents", {
-        name: "QA", role: "qa", status: "idle", isEnabled: true, description: "d",
-        capabilities: ["browser-testing"], supportedTools: ["read_file", "run_command"],
+        name: "Assistant", role: "qa", status: "idle", isEnabled: true, description: "d",
+        capabilities: [...ROLES.qa.capabilities], supportedTools: [...ROLES.qa.defaultTools],
         systemPrompt: `${PREVIOUS_SEED_PROMPTS.qa![0]} Also check Safari.`,
       }),
       cto: await ctx.db.insert("agents", {
@@ -53,44 +79,47 @@ describe("fixed-team sync: unedited seed prompts and fresh seeds", () => {
     }));
 
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
-
     const rows = await t.run(async (ctx) => ({
       reviewer: await ctx.db.get(ids.reviewer),
       qa: await ctx.db.get(ids.qa),
       cto: await ctx.db.get(ids.cto),
-      audit: await ctx.db.query("audit").collect(),
     }));
 
-    // Retired-role agents are no longer touched by the sync.
-    expect(rows.reviewer?.isEnabled).toBe(true);
-    expect(rows.reviewer?.retiredAt).toBeUndefined();
+    // Plan 068: retired-role rows are disabled and stamped, prompts untouched.
+    for (const row of [rows.reviewer, rows.cto]) {
+      expect(row?.isEnabled).toBe(false);
+      expect(row?.retiredAt).toBeGreaterThan(0);
+    }
     expect(rows.reviewer?.systemPrompt).toBe("my own review prompt");
-
-    // Unedited old seed → current seed; an edited one stays exactly as is.
-    expect(rows.cto?.systemPrompt).toBe(AGENT_SEED_PROMPTS.cto);
+    expect(rows.cto?.systemPrompt).toBe(PREVIOUS_SEED_PROMPTS.cto![0]);
+    // An edited QA prompt stays exactly as is.
     expect(rows.qa?.systemPrompt).toBe(`${PREVIOUS_SEED_PROMPTS.qa![0]} Also check Safari.`);
-    expect(rows.qa?.supportedTools).toEqual(["read_file", "run_command"]);
+    expect(rows.qa?.supportedTools).toEqual(ROLES.qa.defaultTools);
 
-    const synced = rows.audit.filter((row) => row.action === "agent.sync");
-    expect(synced.map((row) => row.target)).toContain("CTO");
-    const ctoAudit = synced.find((row) => row.target === "CTO");
-    expect((ctoAudit?.details as { changed: string[] }).changed).toContain("systemPrompt");
-
-    // Idempotent: a second sync patches nothing more.
+    // A later sync does not re-stamp a retired row (manual re-enable is respected).
+    await t.run(async (ctx) => ctx.db.patch(ids.reviewer, { isEnabled: true }));
+    const stamped = (await t.run(async (ctx) => await ctx.db.get(ids.reviewer)))?.retiredAt;
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
-    const again = await t.run(async (ctx) => (await ctx.db.query("audit").collect()).filter((row) => row.action === "agent.sync"));
-    expect(again).toHaveLength(synced.length);
+    const after = await t.run(async (ctx) => await ctx.db.get(ids.reviewer));
+    expect(after?.isEnabled).toBe(true);
+    expect(after?.retiredAt).toBe(stamped);
   });
 
-  test("fresh seed rows follow the fixed-team policy; Designer is manual, not seeded", async () => {
+  test("fresh seed rows follow the fixed-team policy; retired roles are not seeded", async () => {
     const t = makeT();
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
     const agents = await t.run(async (ctx) => await ctx.db.query("agents").collect());
-    const tools = (role: string) => agents.find((agent) => agent.role === role)?.supportedTools ?? [];
-    expect(tools("frontend")).toContain("write_file");
-    expect(tools("backend")).toContain("write_file");
-    expect(tools("qa")).not.toContain("write_file");
-    expect(tools("cto")).not.toContain("write_file");
-    expect(agents.some((agent) => agent.role === "designer")).toBe(false);
+    expect(agents).toHaveLength(1);
+    const qa = agents[0];
+    expect(qa.role).toBe("qa");
+    expect(qa.name).toBe("Assistant");
+    expect(qa.isEnabled).toBe(true);
+    expect(qa.systemPrompt).toBe(AGENT_SEED_PROMPTS.qa);
+    expect(qa.supportedTools).toContain("write_file");
+    expect(qa.supportedTools).not.toContain("web_reach");
+    expect(qa.capabilities).toEqual(ROLES.qa.capabilities);
+    for (const role of ["frontend", "backend", "cto", "designer"]) {
+      expect(agents.some((agent) => agent.role === role)).toBe(false);
+    }
   });
 });

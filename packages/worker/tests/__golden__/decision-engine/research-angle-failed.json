@@ -56,9 +56,9 @@
   ],
   "messages": [
     "system: Planned 3 subtasks",
-    "system: Sent to CTO: ra-1",
-    "system: Sent to CTO: ra-2",
-    "system: Sent to CTO: synthesis"
+    "system: Sent to Assistant: ra-1",
+    "system: Sent to Assistant: ra-2",
+    "system: Sent to Assistant: synthesis"
   ],
   "delegations": [],
   "pauses": [],

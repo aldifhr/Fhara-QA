@@ -156,9 +156,9 @@ describe("O1: CTO architecture decision node in the runner", () => {
     // O2: the orchestrator's status lines are neutral System lines.
     expect(systemLines).toEqual([
       "Planned 2 subtasks · architecture decision needed",
-      "Sent to CTO: Architecture decision: order status model",
+      "Sent to Assistant: Architecture decision: order status model",
       "CTO decided: go",
-      "Sent to Frontend: Implement",
+      "Sent to Assistant: Implement",
     ]);
     expect(decisionEvents).toEqual([expect.objectContaining({ verdict: "go", parsed: true })]);
     expect(completions.at(-1)?.status).not.toBe("failed");

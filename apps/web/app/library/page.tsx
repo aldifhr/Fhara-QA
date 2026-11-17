@@ -7,7 +7,6 @@ import { Download, MoreHorizontal, Plus } from "lucide-react";
 import { ImportFromGithubModal } from "./ImportFromGithub";
 import { useToast } from "@/components/Toasts";
 import Segmented from "@/components/ui/segmented";
-import { TemplatesTab } from "./TemplatesTab";
 import { BrowseTab } from "./BrowseTab";
 import {
   errorText,
@@ -52,7 +51,7 @@ const headerButton =
  * to agents; at run time it is appended to the agent's prompt as
  * "## Skill: <name>".
  */
-type Tab = "skills" | "browse" | "sources" | "templates";
+type Tab = "skills" | "browse" | "sources";
 
 export default function LibraryPage() {
   return (
@@ -66,8 +65,7 @@ function LibraryInner() {
   const params = useSearchParams();
   const router = useRouter();
   const rawTab = params.get("tab");
-  const tab: Tab =
-    rawTab === "templates" ? "templates" : rawTab === "sources" ? "sources" : rawTab === "browse" ? "browse" : "skills";
+  const tab: Tab = rawTab === "sources" ? "sources" : rawTab === "browse" ? "browse" : "skills";
   const projectId = params.get("project") ?? undefined;
   const setTab = (next: Tab) => {
     const q = new URLSearchParams(params.toString());
@@ -83,10 +81,8 @@ function LibraryInner() {
         <div className="mx-auto max-w-3xl">
           {tab === "browse" ? (
             <BrowseView tabs={<LibraryTabs tab={tab} onChange={setTab} />} />
-          ) : tab !== "templates" ? (
-            <SkillsTab view={tab} tabs={<LibraryTabs tab={tab} onChange={setTab} />} />
           ) : (
-            <TemplatesTab projectId={projectId} tabs={<LibraryTabs tab={tab} onChange={setTab} />} />
+            <SkillsTab view={tab} tabs={<LibraryTabs tab={tab} onChange={setTab} />} />
           )}
         </div>
       </main>
@@ -104,7 +100,6 @@ function LibraryTabs({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void
         { value: "skills", label: "Skills" },
         { value: "browse", label: "Browse" },
         { value: "sources", label: "Sources" },
-        { value: "templates", label: "Templates" },
       ]}
     />
   );

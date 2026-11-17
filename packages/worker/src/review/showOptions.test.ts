@@ -106,7 +106,7 @@ describe("show_options: validation before write", () => {
       expect(readdirSync(dir).sort()).toEqual(["A.html", "A.png", "README.md"]);
       expect(readFileSync(path.join(h.root, ".fhara", ".gitignore"), "utf8")).toContain("*");
       const stored = (h.api.createOptionReview as ReturnType<typeof vi.fn>).mock.calls[0][0];
-      expect(stored.purpose).toBe("design");
+      expect(stored.purpose).toBe("other");
       expect(stored.recommended).toBe("B");
       expect(stored.options[0]).toMatchObject({ id: "A", kind: "html", imageStorageId: "storage1" });
       expect(stored.options[0].html).toContain('<a href="#">x</a>');
@@ -164,9 +164,10 @@ describe("show_options: validation before write", () => {
     }
   });
 
-  test("purpose defaults by role", () => {
-    expect(purposeFor("Designer", undefined)).toBe("design");
-    expect(purposeFor("cto", undefined)).toBe("architecture");
+  test("purpose ignores retired roles and defaults to other unless explicit", () => {
+    expect(purposeFor("Designer", undefined)).toBe("other");
+    expect(purposeFor("cto", undefined)).toBe("other");
+    expect(purposeFor("qa", undefined)).toBe("other");
     expect(purposeFor("designer", "research")).toBe("research");
     expect(purposeFor("qa", "bogus")).toBe("other");
   });

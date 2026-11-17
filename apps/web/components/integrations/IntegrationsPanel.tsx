@@ -541,7 +541,7 @@ function ServerModal({
             <label className={LABEL}>
               Allowed tools {preset.id !== "custom" && <span className="text-ink-3">(optional, beyond the preset&apos;s own)</span>}
               <input value={toolsText} onChange={(e) => setToolsText(e.target.value)} placeholder="tool_a, tool_b" className={`${INPUT} font-mono`} />
-              <span className="text-[12px] text-ink-3">Listed tools are treated as read-only and offered to every allowed role.</span>
+              <span className="text-[12px] text-ink-3">Listed tools are treated as read-only and offered to every assistant.</span>
             </label>
           )}
 

@@ -342,7 +342,7 @@ describe("O3 routing (no @mention): System routes, the owner answers, no CTO wra
     expect(replies[1].taskOffer).toEqual({
       kind: "testing",
       commands: ["npm run test"],
-      hint: { source: "offer", kind: "testing" },
+      hint: { source: "offer", kind: "testing", role: "qa" },
     });
     const tasks = await t.run(async (ctx) => ctx.db.query("tasks").collect());
     expect(tasks).toHaveLength(0);

@@ -91,7 +91,7 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
       return;
     }
     if (!agentRole.trim()) {
-      setAgentError("Role is required — pick a role from the dropdown");
+      setAgentError("Choose an assistant to continue");
       return;
     }
     setSavingAgent(true);
@@ -168,10 +168,10 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
         </label>
 
         <div className="grid gap-1.5">
-          <span className="text-[12.5px] text-ink-3">Role</span>
+          <span className="text-[12.5px] text-ink-3">Assistant</span>
           <Select value={agentRole} onValueChange={handleSelectRole}>
-            <SelectTrigger aria-label="Role" className="h-10 w-full rounded-lg border-line px-3 text-[14px]">
-              <SelectValue placeholder="Choose a role" />
+            <SelectTrigger aria-label="Assistant" className="h-10 w-full rounded-lg border-line px-3 text-[14px]">
+              <SelectValue placeholder="Choose an assistant" />
             </SelectTrigger>
             <SelectContent>
               {roleOptions.map((role) => (

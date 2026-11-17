@@ -109,35 +109,10 @@ export async function runQaLoop(ctx: RunContext): Promise<boolean> {
       return true;
     }
 
-    // Runtime gates (QA policy §5): QA runs only on APPLIED changes in a
-    // browser-runnable project. Otherwise it is skipped with a clear note
-    // (verdict "blocked"), never a fix loop and never a failed task unless
-    // qaRequired.
-    // (Browser-runnability is checked by the QA executor itself, which
-    // reports a non-runnable project as a "blocked" verdict.)
-    const skipReason =
-      state.fileChanges.size === 0
-        ? "no code changes were applied, so there is nothing new to check in the browser"
-        : null;
-    if (skipReason) {
-      for (const node of qaNodes) {
-        state.qaVerdicts[node.key] = "blocked";
-        state.qaChecks = {
-          ...(state.qaChecks ?? {}),
-          [node.key]: [{ label: "qa-environment", status: "inconclusive", details: skipReason }],
-        };
-        runCompleted.add(node.key);
-        await deps.api
-          .updateSubtask({
-            taskId,
-            key: node.key,
-            status: "completed",
-            output: `QA verdict: blocked — QA skipped: ${skipReason}.`,
-          })
-          .catch(() => undefined);
-      }
-      return await reportBlocked(skipReason);
-    }
+    // QA-only fork (plan 068): QA is the product, not a post-apply stage, so
+    // it runs even when no code change was staged. The executor still reports
+    // "blocked" when the project is not browser-runnable; that is the only
+    // environment gate here.
 
     // QA has its own (smaller) fix budget: at most 1 automatic round by default.
     const maxIterations = deps.policy.qaMaxFixIterations ?? deps.policy.maxReviewIterations;

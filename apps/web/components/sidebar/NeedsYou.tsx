@@ -22,7 +22,7 @@ const KIND_ICON: Record<string, { icon: LucideIcon; tone: string }> = {
   pr: { icon: GitPullRequest, tone: "bg-hover text-ink-2" },
 };
 
-const MAX_SHOWN = 3;
+const MAX_SHOWN = 50;
 
 function timeOf(ms: number): string {
   return isSameDay(ms) ? clockTime(ms) : shortDate(ms);
@@ -86,11 +86,6 @@ export default function NeedsYou({
             );
           })}
         </ul>
-      )}
-      {open && items.length > MAX_SHOWN && (
-        <Link href="/inbox" onClick={onNavigate} className="mt-1.5 block px-2 text-[13px] text-ink hover:underline">
-          View all {data?.total} in Inbox
-        </Link>
       )}
     </section>
   );

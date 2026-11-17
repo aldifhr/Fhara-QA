@@ -8,7 +8,7 @@ import { FIXED_TEAM_DISPLAY_ORDER, FIXED_TEAM_SEED_ORDER, ROLES, ROLE_KEYS, role
 import { fixedAgentIds as fixedAgentIdsFor, orderTeam, type AgentLike, type AgentRow } from "./agentIdentity";
 
 export { roleKeyForMention, roleLabel } from "@/api/convex/lib/roles";
-import { agentDisplayName, agentRoleCaption } from "./agentIdentity";
+import { agentDisplayName } from "./agentIdentity";
 import { roleLabel as roleLabelOf } from "@/api/convex/lib/roles";
 
 /** What to call an agent in the UI: its own name ("Reviewer 2"), else its role label. */
@@ -16,9 +16,10 @@ export function agentName(agent: AgentLike): string {
   return agentDisplayName(agent, roleLabelOf);
 }
 
-/** The role as secondary text, or null when it only repeats the name. */
-export function agentRoleText(agent: AgentLike): string | null {
-  return agentRoleCaption(agent, roleLabelOf);
+/** No role captions in the UI: this fork shows one agent, not a role roster. */
+export function agentRoleText(_agent: AgentLike): string | null {
+  void _agent;
+  return null;
 }
 
 /**

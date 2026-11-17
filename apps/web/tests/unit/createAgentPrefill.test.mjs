@@ -4,14 +4,16 @@ import { prefillPromptForRole, roleTemplateFor } from "../../../api/convex/lib/p
 import { ROLE_PROMPT_TEMPLATES } from "../../../api/convex/lib/prompts/rolePrompts.data.ts";
 
 test("picking a role in the create form prefills its role template", () => {
-  assert.equal(prefillPromptForRole("", "frontend"), ROLE_PROMPT_TEMPLATES.frontend);
-  assert.equal(roleTemplateFor("backend"), ROLE_PROMPT_TEMPLATES.backend);
+  // Plan 068: the only role is QA ("Assistant").
+  assert.equal(prefillPromptForRole("", "qa"), ROLE_PROMPT_TEMPLATES.qa);
+  assert.equal(roleTemplateFor("qa"), ROLE_PROMPT_TEMPLATES.qa);
   // A retired name prefills the role that does the work now.
-  assert.equal(prefillPromptForRole("", "designer"), ROLE_PROMPT_TEMPLATES.frontend);
+  assert.equal(prefillPromptForRole("", "designer"), ROLE_PROMPT_TEMPLATES.qa);
+  assert.equal(prefillPromptForRole("", "frontend"), ROLE_PROMPT_TEMPLATES.qa);
 });
 
-test("switching roles swaps an untouched template but keeps typed instructions", () => {
-  assert.equal(prefillPromptForRole(ROLE_PROMPT_TEMPLATES.frontend, "qa"), ROLE_PROMPT_TEMPLATES.qa);
+test("an untouched template keeps its role template but typed instructions are kept", () => {
+  assert.equal(prefillPromptForRole(ROLE_PROMPT_TEMPLATES.qa, "qa"), ROLE_PROMPT_TEMPLATES.qa);
   assert.equal(prefillPromptForRole("Only review SQL.", "qa"), "Only review SQL.");
   assert.equal(prefillPromptForRole(ROLE_PROMPT_TEMPLATES.qa, null), "");
 });

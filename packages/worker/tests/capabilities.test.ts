@@ -62,10 +62,21 @@ describe("capability routing", () => {
     ]);
   });
 
-  it("plan 040: no fallback by default; the opt-in fallback skips the CTO", () => {
+  it("plan 040: no fallback by default; the opt-in fallback never picks a non-writer for code work", () => {
     expect(routeCapability("database-tuning", agents)).toBeNull();
-    // a3 is the CTO (highest priority): the opt-in fallback never picks it.
-    expect(routeCapability("database-tuning", agents, { allowFallback: true })?._id).not.toBe("a3");
+    // The retired CTO role is gone; the fallback may pick the highest-priority
+    // agent for a non-writing capability, but never with nobody available.
+    expect(routeCapability("database-tuning", agents, { allowFallback: true })?._id).toBe("a3");
+    expect(routeCapability("database-tuning", [], { allowFallback: true })).toBeNull();
+    const readOnlyTop: AgentDefinition = {
+      _id: "ro",
+      name: "ReadOnly",
+      role: "custom-nowrite",
+      capabilities: ["documentation-support"],
+      supportedTools: ["read_file"],
+      priority: 99,
+    };
+    expect(routeCapability("frontend-development", [...agents, readOnlyTop], { allowFallback: true })?._id).not.toBe("ro");
   });
 
   it("returns null when fallback is disabled", () => {

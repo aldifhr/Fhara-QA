@@ -150,7 +150,7 @@ describe("write requests in chat get a short reply and a routed Create task offe
       brief:
         "Add a plain HTML bold.html at the repo root.\n\nRequest: @Frontend tolong buatkan bold.html dengan teks 'Hello World' dengan menggunakan css dan js serta teksnya bold",
       // The user @mentioned Frontend: the only binding hint.
-      hint: { source: "mention", role: "frontend", kind: "implementation", brief: "I'll add a plain HTML bold.html at the repo root.", files: ["bold.html"], hard: true },
+      hint: { source: "mention", role: "qa", kind: "implementation", brief: "I'll add a plain HTML bold.html at the repo root.", files: ["bold.html"], hard: true },
     });
     expect(replies[0].unverifiedRefs).toBeUndefined();
     expect(await t.run(async (ctx) => ctx.db.query("tasks").collect())).toHaveLength(0);
@@ -166,7 +166,7 @@ describe("write requests in chat get a short reply and a routed Create task offe
     expect(tasks[0].command).toContain("bold.html");
     // P1a: the pool keeps the review/QA roles the team has (this team has no Reviewer), so their nodes stay routable.
     expect(tasks[0].assignedAgentIds).toEqual([ctoId, frontendId, qaId]);
-    expect(tasks[0].routingHint).toMatchObject({ source: "mention", role: "frontend", kind: "implementation", files: ["bold.html"], hard: true });
+    expect(tasks[0].routingHint).toMatchObject({ source: "mention", role: "qa", kind: "implementation", files: ["bold.html"], hard: true });
   });
 
   test("an un-mentioned HTML file request goes to the CTO first (System line), which offers the task to Frontend", async () => {
@@ -185,14 +185,14 @@ describe("write requests in chat get a short reply and a routed Create task offe
       assigneeAgentId: String(frontendId),
       brief:
         "Add a plain HTML ultimate.html at the repo root.\n\nRequest: buatkan file ultimate.html dengan teks 'Ultimate is a new vision' dengan background yang menarik",
-      hint: { source: "offer", role: "frontend", kind: "implementation", files: ["ultimate.html"] },
+      hint: { source: "offer", role: "qa", kind: "implementation", files: ["ultimate.html"] },
     });
     expect(replies[0].taskOffer?.hint?.hard).toBeUndefined();
     expect(replies[0].unverifiedRefs).toBeUndefined();
     await ask(t, projectId, "gas");
     const tasks = await t.run(async (ctx) => ctx.db.query("tasks").collect());
     expect(tasks.map((task) => task.assignedAgentIds)).toEqual([[ctoId, frontendId, qaId]]);
-    expect(tasks[0].routingHint).toMatchObject({ source: "offer", role: "frontend" });
+    expect(tasks[0].routingHint).toMatchObject({ source: "offer", role: "qa" });
   });
 
   test("a question to @Frontend stays a normal answer with no offer", async () => {

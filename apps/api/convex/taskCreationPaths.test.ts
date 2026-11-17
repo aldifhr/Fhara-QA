@@ -138,7 +138,7 @@ const FILE_REQUEST = "buatkan file ultimate.html dengan teks 'Ultimate is a new 
 async function offer(s: Setup) {
   reply = () => "Siap, ini dikerjakan lewat task — balas gas atau tekan Create task.";
   const replies = (await ask(s, FILE_REQUEST)).filter((r) => r.voice !== "system");
-  expect(replies[0].taskOffer).toMatchObject({ assigneeAgentId: String(s.frontendId), hint: { source: "offer", role: "frontend" } });
+  expect(replies[0].taskOffer).toMatchObject({ assigneeAgentId: String(s.frontendId), hint: { source: "offer", role: "qa" } });
   expect(await tasksOf(s)).toHaveLength(0);
   return replies[0];
 }
@@ -169,7 +169,7 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     });
     const task = await onlyTask(s);
     expect(task._id).toBe(taskId);
-    expect(task.routingHint).toMatchObject({ source: "offer", role: "frontend", kind: "implementation", files: ["ultimate.html"] });
+    expect(task.routingHint).toMatchObject({ source: "offer", role: "qa", kind: "implementation", files: ["ultimate.html"] });
     const used = await s.t.run(async (ctx) => ctx.db.get(message._id));
     expect(used?.taskOffer?.usedTaskId).toBe(taskId);
   });
@@ -180,7 +180,7 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     await ask(s, "gas");
     const task = await onlyTask(s);
     expect(task.command).toContain("ultimate.html");
-    expect(task.routingHint).toMatchObject({ source: "offer", role: "frontend", files: ["ultimate.html"] });
+    expect(task.routingHint).toMatchObject({ source: "offer", role: "qa", files: ["ultimate.html"] });
   });
 
   test("'/task …' in the project chat: routed like chat, no Backend fallback", async () => {
@@ -188,7 +188,7 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     await ask(s, "/task buatkan halaman landing.html dengan tombol biru");
     const task = await onlyTask(s);
     expect(task.command).toBe("buatkan halaman landing.html dengan tombol biru");
-    expect(task.routingHint).toMatchObject({ source: "command", role: "frontend", files: ["landing.html"] });
+    expect(task.routingHint).toMatchObject({ source: "command", role: "qa", files: ["landing.html"] });
     expect(task.routingHint?.hard).toBeUndefined();
   });
 
@@ -197,14 +197,14 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     await ask(s, "kerjakan halaman landing.html dengan tombol biru");
     const task = await onlyTask(s);
     expect(task.command).toContain("landing.html");
-    expect(task.routingHint).toMatchObject({ source: "command", role: "frontend" });
+    expect(task.routingHint).toMatchObject({ source: "command", role: "qa" });
   });
 
   test("'/task @Frontend …' with a mention: the hint is hard", async () => {
     const s = await setup();
     await ask(s, "/task @Frontend rapikan landing.html", [s.frontendId]);
     const task = await onlyTask(s);
-    expect(task.routingHint).toMatchObject({ source: "mention", role: "frontend", hard: true });
+    expect(task.routingHint).toMatchObject({ source: "mention", role: "qa", hard: true });
   });
 
   test("'kerjakan itu' after the offer keeps the offer's assignee and hint", async () => {
@@ -213,7 +213,7 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     await ask(s, "kerjakan itu");
     const task = await onlyTask(s);
     expect(task.command).toContain("ultimate.html");
-    expect(task.routingHint).toMatchObject({ source: "offer", role: "frontend", files: ["ultimate.html"] });
+    expect(task.routingHint).toMatchObject({ source: "offer", role: "qa", files: ["ultimate.html"] });
   });
 
   test("web /task (personal chat attached to the project): routed on the server", async () => {
@@ -226,7 +226,7 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     });
     const task = await onlyTask(s);
     expect(task.conversationId).toBe(s.personalId);
-    expect(task.routingHint).toMatchObject({ source: "command", role: "frontend", files: ["landing.html"] });
+    expect(task.routingHint).toMatchObject({ source: "command", role: "qa", files: ["landing.html"] });
   });
 
   test("TaskBoard (no conversation): routed on the server", async () => {
@@ -234,7 +234,7 @@ describe("every task creation path: CTO + owner + QA, hint stored", () => {
     await s.t.mutation(api.tasks.createFromCommand, { projectId: s.projectId, command: "buatkan halaman landing.html dengan tombol biru" });
     const task = await onlyTask(s);
     expect(task.conversationId).toBeUndefined();
-    expect(task.routingHint).toMatchObject({ source: "command", role: "frontend" });
+    expect(task.routingHint).toMatchObject({ source: "command", role: "qa" });
   });
 
   test("a command nobody owns is never given a Backend default", async () => {

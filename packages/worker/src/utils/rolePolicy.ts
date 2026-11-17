@@ -30,24 +30,22 @@ export { canWritePath } from "@/api/convex/lib/roles";
 /**
  * Aliases collapse retired roles onto their canonical successor. The map is
  * kept here for the worker's free-text routing; the shared module owns the
- * authority for the live `RoleKey`s. Designer aliases point at the live
- * designer role (not frontend), so a stored "UI/UX Designer" row keeps its
- * read-only design permissions.
+ * authority for the single live `RoleKey`.
  */
 const ROLE_ALIASES: Readonly<Record<string, AgentRole>> = {
   ...LEGACY_ROLE_SUCCESSORS,
-  "ui/ux": "designer",
-  "ui/ux designer": "designer",
-  "frontend-developer": "frontend",
-  developer: "frontend",
-  "backend-developer": "backend",
+  "ui/ux": "qa",
+  "ui/ux designer": "qa",
+  "frontend-developer": "qa",
+  developer: "qa",
+  "backend-developer": "qa",
   tester: "qa",
-  security: "backend",
-  "security auditor": "backend",
-  "security engineer": "backend",
-  database: "backend",
-  "database engineer": "backend",
-  db: "backend",
+  security: "qa",
+  "security auditor": "qa",
+  "security engineer": "qa",
+  database: "qa",
+  "database engineer": "qa",
+  db: "qa",
 };
 
 const ROLE_BY_NAME: ReadonlyMap<string, AgentRole> = new Map<string, AgentRole>([
@@ -91,8 +89,12 @@ const VERIFY_COMMANDS: ReadonlyArray<readonly string[]> = [
   ["node", "--version"],
 ];
 
+/** The Playwright spec runner is allowed only with this exact argv. */
+const EXACT_VERIFY_ARGV = ["npx", "playwright", "test", "--reporter=json"];
+
 export function isVerifyCommand(command: string, args: readonly string[]): boolean {
   const argv = [command, ...args];
+  if (argv.length === EXACT_VERIFY_ARGV.length && EXACT_VERIFY_ARGV.every((part, i) => argv[i] === part)) return true;
   return VERIFY_COMMANDS.some((prefix) => prefix.every((part, index) => argv[index] === part));
 }
 
@@ -100,7 +102,7 @@ export function isVerifyCommand(command: string, args: readonly string[]): boole
 export function shellDenial(roleLabel: string, permissions: RolePermissions, command: string, args: readonly string[]): string | null {
   if (permissions.shell === "none") return `the ${roleLabel} role may not run commands`;
   if (permissions.shell === "verify" && !isVerifyCommand(command, args)) {
-    return `the ${roleLabel} role may only run tests, typecheck, build and read-only git`;
+    return `the ${roleLabel} role may only run tests, typecheck, build, Playwright specs and read-only git`;
   }
   return null;
 }

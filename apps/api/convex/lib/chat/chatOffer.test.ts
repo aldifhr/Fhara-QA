@@ -39,7 +39,7 @@ describe("a chat write request produces an offer with a brief", () => {
       assigneeAgentId: "fe",
       brief: `Add a plain HTML index.html at the repo root.\n\nRequest: ${ASK}`,
       // P1a: the routing hint the task inherits (owner, intent, plan line, files).
-      hint: { source: "offer", role: "frontend", kind: "implementation", brief: "I'll add a plain HTML index.html at the repo root.", files: ["index.html"] },
+      hint: { source: "offer", role: "qa", kind: "implementation", brief: "I'll add a plain HTML index.html at the repo root.", files: ["index.html"] },
     });
   });
 
@@ -61,7 +61,7 @@ describe("a chat write request produces an offer with a brief", () => {
     expect(offerForReply(write, "I'll tidy the login page. Chat can't change files. Want me to create a task for it?")).toEqual({
       kind: "implementation",
       assigneeAgentId: "fe",
-      hint: { source: "offer", role: "frontend", kind: "implementation" },
+      hint: { source: "offer", role: "qa", kind: "implementation" },
     });
     expect(offerForReply(write, "Flexbox lays items out in one direction.")).toBeNull();
     expect(replyNeedsTask("I can't write files from this read-only session. Create a task for the worker to add index.html.")).toBe(true);
@@ -143,7 +143,7 @@ describe("a greeting does not create an offer", () => {
 
 describe("prompt text never says 'read-only session'", () => {
   test("chat prompts and role templates", () => {
-    const agent = { name: "Frontend", role: "frontend", systemPrompt: ROLE_PROMPT_TEMPLATES.frontend };
+    const agent = { name: "Assistant", role: "qa", systemPrompt: ROLE_PROMPT_TEMPLATES.qa };
     const texts = [
       ...buildChatPersonaLines(agent, "demo", team, "snapshot", true),
       ...buildChatPersonaLines(agent, "demo", team, "snapshot", false),
@@ -153,7 +153,7 @@ describe("prompt text never says 'read-only session'", () => {
       ...Object.values(ROLE_PROMPT_TEMPLATES),
     ].join("\n");
     expect(texts).not.toMatch(/read-only session/i);
-    expect(ROLE_PROMPT_TEMPLATES.frontend).toContain('Never ask "Want me to create a task for it?"');
+    expect(ROLE_PROMPT_TEMPLATES.qa).toContain("Write only test paths");
     expect(texts).not.toContain("then ask \"Chat can't change files. Want me to create a task for it?\"");
   });
 });

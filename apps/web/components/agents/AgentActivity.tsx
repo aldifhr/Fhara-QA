@@ -101,8 +101,8 @@ export default function AgentActivity({
         )}
       </Block>
 
-      <Block title="Role">
-        <p>{responsibilities[0] ?? "No role description."}</p>
+      <Block title="Assistant">
+        <p>{responsibilities[0] ?? "No description."}</p>
         {responsibilities.length > 1 && (
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {responsibilities.slice(1).map((item) => (
@@ -114,12 +114,12 @@ export default function AgentActivity({
 
       <Block title="Capabilities">
         <ValueList values={capabilities} />
-        {capabilitiesFromRole && capabilities.length > 0 && <p className="mt-1 text-[12px] text-ink-3">From role defaults. Set on the agent to override.</p>}
+        {capabilitiesFromRole && capabilities.length > 0 && <p className="mt-1 text-[12px] text-ink-3">Default. Set on the assistant to override.</p>}
       </Block>
 
       <Block title="Tool permissions">
         <ValueList values={tools} />
-        <p className="mt-1 text-[12px] text-ink-3">{toolsAreCustom ? "Custom for this agent." : "Role defaults."}</p>
+        <p className="mt-1 text-[12px] text-ink-3">{toolsAreCustom ? "Custom for this agent." : "Defaults."}</p>
         {toolOverrides.length > 0 && (
           <ul className="mt-2 space-y-1 text-[12.5px]">
             {toolOverrides.map((row) => (

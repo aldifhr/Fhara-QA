@@ -40,7 +40,8 @@ describe("taskRoutingHint / hintedKind / capabilityOfRole", () => {
   });
 
   it("a role's first capability", () => {
-    expect(capabilityOfRole("frontend")).toBe("frontend-development");
+    expect(capabilityOfRole("qa")).toBe("browser-testing");
+    expect(capabilityOfRole("frontend")).toBeNull();
     expect(capabilityOfRole("chef")).toBeNull();
     expect(capabilityOfRole(undefined)).toBeNull();
   });
@@ -53,10 +54,10 @@ describe("applyRoutingHint", () => {
   });
 
   it("same kind: the hint's role leads the capabilities", () => {
-    const out = applyRoutingHint(base({}), "ubah tombol", { source: "offer", role: "frontend", kind: "implementation" });
+    const out = applyRoutingHint(base({}), "ubah tombol", { source: "offer", role: "qa", kind: "implementation" });
     expect(out.kind).toBe("code_change");
-    expect(out.suggestedCapabilities).toEqual(["frontend-development", "backend-development"]);
-    expect(out.reasons.at(-1)).toBe("routing hint: owner frontend");
+    expect(out.suggestedCapabilities).toEqual(["browser-testing", "backend-development"]);
+    expect(out.reasons.at(-1)).toBe("routing hint: owner qa");
   });
 
   it("a soft kind from chat replaces the text guess (research → audit)", () => {
@@ -68,9 +69,9 @@ describe("applyRoutingHint", () => {
   });
 
   it("a read-only kind from research text becomes a change when chat offered implementation; complexity is not invented", () => {
-    const out = applyRoutingHint(base({ kind: "research", suggestedCapabilities: ["research"] }), "landing page", { source: "offer", role: "frontend", kind: "implementation" });
+    const out = applyRoutingHint(base({ kind: "research", suggestedCapabilities: ["research"] }), "landing page", { source: "offer", role: "qa", kind: "implementation" });
     expect(out.kind).toBe("code_change");
-    expect(out.suggestedCapabilities[0]).toBe("frontend-development");
+    expect(out.suggestedCapabilities[0]).toBe("browser-testing");
     expect(out.complexity).toBeUndefined();
   });
 
@@ -98,11 +99,11 @@ describe("routingHintPromptLines", () => {
 
   it("a soft hint is a prior with its facts listed", () => {
     expect(
-      routingHintPromptLines({ source: "offer", role: "frontend", kind: "implementation", domain: "frontend", topic: "landing", files: ["a.tsx", "b.css"], brief: "I'll add a page." })
+      routingHintPromptLines({ source: "offer", role: "qa", kind: "implementation", domain: "frontend", topic: "landing", files: ["a.tsx", "b.css"], brief: "I'll add a page." })
     ).toEqual([
       "",
       "Routing hint (from chat; a prior, override it when the request clearly needs another owner):",
-      "- owner role: Frontend",
+      "- owner role: Assistant",
       "- intent: implementation",
       "- domain: frontend",
       "- topic: landing",
@@ -122,8 +123,8 @@ describe("routingHintPromptLines", () => {
     const classification = classifyCommand(command);
     const without = buildPlanningPrompt({ command, classification, agents: team, policy });
     expect(without).not.toContain("Routing hint");
-    const prompt = buildPlanningPrompt({ command, classification, agents: team, policy, routingHint: { source: "offer", role: "frontend", files: ["landing.html"] } });
-    expect(prompt).toContain("Routing hint (from chat; a prior, override it when the request clearly needs another owner):\n- owner role: Frontend\n- files named: landing.html");
+    const prompt = buildPlanningPrompt({ command, classification, agents: team, policy, routingHint: { source: "offer", role: "qa", files: ["landing.html"] } });
+    expect(prompt).toContain("Routing hint (from chat; a prior, override it when the request clearly needs another owner):\n- owner role: Assistant\n- files named: landing.html");
     expect(prompt.indexOf("Suggested capabilities:")).toBeLessThan(prompt.indexOf("Routing hint"));
   });
 });

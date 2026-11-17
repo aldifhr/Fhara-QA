@@ -25,13 +25,18 @@ const agent = (role: string, capabilities: string[], priority = 5): AgentDefinit
   capabilities,
   isEnabled: true,
   priority,
+  supportedTools: ["read_file", "write_file", "run_command"],
 });
 
+/**
+ * Retired role names all resolve to `qa`, so distinguishing owners in this
+ * QA-only fork needs custom agents whose role strings are not legacy aliases.
+ */
 const TEAM: AgentDefinition[] = [
-  agent("cto", ["architecture", "research"], 9),
-  agent("frontend", ["frontend-development", "ui-ux-design"]),
-  agent("backend", ["backend-development", "code-review", "security-audit", "documentation-support"]),
-  agent("qa", ["browser-testing", "code-review"]),
+  agent("custom-cto", ["architecture", "research"], 9),
+  agent("custom-fe", ["frontend-development", "ui-ux-design"]),
+  agent("custom-be", ["backend-development", "code-review", "security-audit", "documentation-support"]),
+  agent("custom-qa", ["browser-testing", "code-review"]),
 ];
 
 let order = 0;
@@ -63,13 +68,13 @@ describe("Response Owner rule", () => {
       node("review", "review", "code-review", { dependencies: ["build"] }),
       node("qa", "qa", "browser-testing", { dependencies: ["build"] }),
     ]);
-    expect(pickResponseOwner(p, TEAM)).toBe("frontend");
+    expect(pickResponseOwner(p, TEAM)).toBe("custom-fe");
   });
 
   it("backend + frontend code: the role with more code nodes, ties to the earliest", () => {
     expect(
       pickResponseOwner(plan([node("api", "code_change", "backend-development"), node("ui", "code_change", "frontend-development")]), TEAM)
-    ).toBe("backend");
+    ).toBe("custom-be");
     expect(
       pickResponseOwner(
         plan([
@@ -79,7 +84,7 @@ describe("Response Owner rule", () => {
         ]),
         TEAM
       )
-    ).toBe("backend");
+    ).toBe("custom-be");
   });
 
   it("bug fix: the implementing role reports, not QA (QA evidence goes in the report)", () => {
@@ -88,21 +93,21 @@ describe("Response Owner rule", () => {
       node("fix", "code_change", "frontend-development", { dependencies: ["investigate"] }),
       node("retest", "qa", "browser-testing", { dependencies: ["fix"] }),
     ]);
-    expect(pickResponseOwner(p, TEAM)).toBe("frontend");
+    expect(pickResponseOwner(p, TEAM)).toBe("custom-fe");
   });
 
   it("docs plan: Backend", () => {
     const p = plan([node("readme", "code_change", "documentation-support", { allowedPaths: ["README.md"] })]);
-    expect(pickResponseOwner(p, TEAM)).toBe("backend");
+    expect(pickResponseOwner(p, TEAM)).toBe("custom-be");
   });
 
   it("research plan: CTO", () => {
     const p = plan([node("a1", "research", "research"), node("a2", "research", "research"), node("synth", "analysis", "research")]);
-    expect(pickResponseOwner(p, TEAM)).toBe("cto");
+    expect(pickResponseOwner(p, TEAM)).toBe("custom-cto");
   });
 
   it("gate-only plan ('Review PR #12'): the gate's role", () => {
-    expect(pickResponseOwner(plan([node("review", "review", "code-review")]), TEAM)).toBe("backend");
+    expect(pickResponseOwner(plan([node("review", "review", "code-review")]), TEAM)).toBe("custom-be");
   });
 
   it("the CTO decision node is a gate: the CTO is never the RO of a flagged code plan", () => {
@@ -110,17 +115,17 @@ describe("Response Owner rule", () => {
       node("arch-decision", "analysis", "architecture"),
       node("schema", "code_change", "backend-development", { dependencies: ["arch-decision"] }),
     ]);
-    expect(pickResponseOwner(p, TEAM)).toBe("backend");
+    expect(pickResponseOwner(p, TEAM)).toBe("custom-be");
   });
 
-  it("works without a roster (fixed-team defaults)", () => {
-    expect(pickResponseOwner(plan([node("ui", "code_change", "frontend-development")]))).toBe("frontend");
+  it("works without a roster (fixed-team default is qa for its own capabilities)", () => {
+    expect(pickResponseOwner(plan([node("checks", "qa", "browser-testing")]))).toBe("qa");
     expect(pickResponseOwner(plan([]))).toBeNull();
   });
 
   it("responseOwnerAgent picks the enabled agent of that role", () => {
-    expect(responseOwnerAgent("frontend", TEAM)?._id).toBe("agent-frontend");
-    expect(responseOwnerAgent("frontend", [{ ...TEAM[2], isEnabled: false }])).toBeUndefined();
+    expect(responseOwnerAgent("custom-fe", TEAM)?._id).toBe("agent-custom-fe");
+    expect(responseOwnerAgent("custom-be", [{ ...TEAM[2], isEnabled: false }])).toBeUndefined();
     expect(responseOwnerAgent(null, TEAM)).toBeUndefined();
   });
 });
@@ -139,7 +144,7 @@ describe("QA and Reviewer only for code changes", () => {
     );
     expect(p.subtasks.map((s) => s.key)).toEqual(["readme"]);
     expect(p.gatesSkipped).toBe(true);
-    expect(p.responseOwner).toBe("backend");
+    expect(p.responseOwner).toBe("custom-be");
     expect(notes.join(" ")).toContain("QA and review skipped: no code changes");
     expect(planSystemLine(p, 1)).toBe("Planned 1 subtask · QA and review skipped: no code changes");
   });
@@ -167,7 +172,7 @@ describe("QA and Reviewer only for code changes", () => {
     );
     expect(p.subtasks.map((s) => s.kind)).toEqual(["code_change", "review", "qa"]);
     expect(p.gatesSkipped).toBeUndefined();
-    expect(p.responseOwner).toBe("frontend");
+    expect(p.responseOwner).toBe("custom-fe");
   });
 
   it("gate-only plans keep their gate", () => {
@@ -218,7 +223,7 @@ describe("final report author = Response Owner", () => {
       state: { ...emptyState(), qaVerdicts: { qa: "passed" } },
     });
     expect(messages).toHaveLength(1);
-    expect(messages[0].agentId).toBe("agent-frontend");
+    expect(messages[0].agentId).toBe("agent-custom-fe");
     expect(messages[0].content).toContain("QA: structural browser checks passed.");
   });
 
@@ -235,7 +240,7 @@ describe("final report author = Response Owner", () => {
       subtasks: [{ key: "r", kind: "research", status: "completed" }] as any,
       state: emptyState(),
     });
-    expect(messages[0].agentId).toBe("agent-cto");
+    expect(messages[0].agentId).toBe("agent-custom-cto");
   });
 
   it("persistPlan stores the Response Owner on the task and posts the plan System line", async () => {
@@ -250,29 +255,30 @@ describe("final report author = Response Owner", () => {
       classification: "code_change",
       agents: TEAM,
     });
-    expect(calls.setPlanning[0]).toMatchObject({ responseOwner: "backend" });
-    expect(calls.savePlan[0].payload.responseOwner).toBe("backend");
+    expect(calls.setPlanning[0]).toMatchObject({ responseOwner: "custom-be" });
+    expect(calls.savePlan[0].payload.responseOwner).toBe("custom-be");
     expect(calls.appendSystemLine[0]).toEqual({ taskId: "t1", projectId: "p1", content: "Planned 1 subtask" });
   });
 });
 
-describe("path-limited docs writes", () => {
-  const docsOnly = { ...ROLES.backend.permissions, write: ["**/*.md", "docs/**"] };
-  it("README.md, nested Markdown and docs/x.md are allowed; src/ is not", () => {
-    for (const ok of ["README.md", "CHANGELOG.md", "apps/web/README.md", "docs/x.md", "docs/guide/setup.md"]) {
-      expect(canWritePath(docsOnly, ok), ok).toBe(true);
+describe("path-limited test writes", () => {
+  const testPathsOnly = ROLES.qa.permissions;
+  it("test paths are allowed; production paths are not", () => {
+    for (const ok of ["README.test.md", "apps/web/page.test.tsx", "tests/x.spec.ts", "e2e/login.spec.ts", "src/__tests__/a.ts", "playwright.config.ts"]) {
+      expect(canWritePath(testPathsOnly, ok), ok).toBe(true);
     }
-    for (const no of ["src/index.ts", "src/README.ts", "package.json", "apps/api/convex/schema.ts", "docs/../src/a.ts"]) {
-      expect(canWritePath(docsOnly, no), no).toBe(false);
+    for (const no of ["src/index.ts", "README.md", "package.json", "apps/api/convex/schema.ts", "docs/../src/a.ts"]) {
+      expect(canWritePath(testPathsOnly, no), no).toBe(false);
     }
-    expect(writeDenial("backend", docsOnly, "src/index.ts")).toMatch(/may only write/);
-    expect(writeDenial("backend", docsOnly, "README.md")).toBeNull();
+    expect(writeDenial("qa", testPathsOnly, "src/index.ts")).toMatch(/may only write/);
+    expect(writeDenial("qa", testPathsOnly, "tests/a.spec.ts")).toBeNull();
   });
 
-  it("the governance broker refuses writes outside the subtask scope", async () => {
+  it("the governance broker refuses writes outside the test-path scope", async () => {
+    // A retired role name resolves to qa; the path gate still applies.
     const ctx = { workspacePath: "/tmp/none", agentRole: "cto", audit: async () => undefined } as never;
     const denied = await tool_call({ ctx, supportedTools: ["write_file"], name: "write_file", args: { path: "src/a.ts", content: "x" } });
     expect(denied.ok).toBe(false);
-    expect((denied as { reason?: string }).reason ?? "").toMatch(/read-only-role|path-not-allowed/);
+    expect((denied as { reason?: string }).reason ?? "").toMatch(/path-not-allowed-for-role/);
   });
 });

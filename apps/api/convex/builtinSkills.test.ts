@@ -3,6 +3,8 @@
  * Built-in skills: the fixed-team sync seeds them into the Library once and
  * attaches each role's defaults once per agent; user deletes, detaches and
  * edits are never undone by a later sync.
+ *
+ * Plan 068: the roster is QA-only, so QA receives all built-in skills.
  */
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
@@ -27,36 +29,23 @@ async function skillNames(t: ReturnType<typeof makeT>, ids: readonly string[] | 
 }
 
 describe("built-in skill metadata", () => {
-  test("only MIT / Apache-2.0 text, every key has roles; code roles get the discipline skill", () => {
+  test("only MIT / Apache-2.0 text, every key has roles; QA gets all built-ins", () => {
     for (const skill of BUILTIN_SKILLS) {
       expect(["MIT", "Apache-2.0"]).toContain(skill.license);
       expect(skill.roles.length).toBeGreaterThan(0);
       if (skill.upstream) expect(["MIT", "Apache-2.0"]).toContain(skill.upstream.license);
     }
-    // Designer is a live manual role with design guidance in its prompt; the
-    // built-in design skills stay on Frontend, which implements the UI.
-    expect(builtinSkillKeysForRole("designer")).toEqual([]);
-    expect(builtinSkillKeysForRole("frontend")).toEqual([
-      "design-system-detection",
-      "frontend-design",
-      "ui-ux-rules",
-      "fhara-discipline",
-      "review-checklist",
-    ]);
-    expect(builtinSkillKeysForRole("backend")).toEqual(["fhara-discipline", "review-checklist"]);
-    expect(builtinSkillKeysForRole("qa")).toEqual([
-      "design-options-review",
-      "accessibility-audit",
-      "web-interface-guidelines",
-      "review-checklist",
-    ]);
-    expect(builtinSkillKeysForRole("cto")).toEqual(["fhara-mcp"]);
-    expect(builtinSkillKeysForRole("frontend").slice(-2)).toEqual(["fhara-discipline", "review-checklist"]);
+    expect(ROLE_KEYS).toEqual(["qa"]);
+    expect(builtinSkillKeysForRole("qa")).toEqual(BUILTIN_SKILLS.map((s) => s.key));
+    expect(builtinSkillKeysForRole("qa").slice(-2)).toEqual(["review-checklist", "fhara-mcp"]);
+    for (const role of ["frontend", "backend", "cto", "designer"]) {
+      expect(builtinSkillKeysForRole(role)).toEqual([]);
+    }
   });
 
-  test("review-checklist goes to Frontend, Backend and QA only, and names no upstream product", () => {
+  test("review-checklist goes to QA only, and names no upstream product", () => {
     const holders = ROLE_KEYS.filter((role) => builtinSkillKeysForRole(role).includes("review-checklist"));
-    expect([...holders].sort()).toEqual(["backend", "frontend", "qa"]);
+    expect(holders).toEqual(["qa"]);
     const skill = BUILTIN_SKILLS.find((s) => s.key === "review-checklist")!;
     expect(skill.license).toBe("MIT");
     expect(skill.upstream?.repo).toBe("deepseek-ai/deepseek-harness");
@@ -77,37 +66,23 @@ describe("built-in skill metadata", () => {
 });
 
 describe("built-in skill seeding", () => {
-  test("seeds once, attaches by role in order, respects deletes, detaches and edits", async () => {
+  test("seeds once, attaches QA defaults in order, respects deletes, detaches and edits", async () => {
     const t = makeT();
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
     const seeded = await t.run(async (ctx) => (await ctx.db.query("skills").collect()).filter((s) => s.builtin));
     expect(seeded.map((s) => s.builtin).sort()).toEqual(BUILTIN_SKILLS.map((s) => s.key).sort());
 
-    const frontend = await agentByRole(t, "frontend");
-    expect(await skillNames(t, frontend.skillIds)).toEqual([
-      "design-system-detection",
-      "frontend-design",
-      "ui-ux-rules",
-      "fhara-discipline",
-      "review-checklist",
-    ]);
-    expect(await skillNames(t, (await agentByRole(t, "qa")).skillIds)).toEqual([
-      "design-options-review",
-      "accessibility-audit",
-      "web-interface-guidelines",
-      "review-checklist",
-    ]);
-    expect(await skillNames(t, (await agentByRole(t, "backend")).skillIds)).toEqual(["fhara-discipline", "review-checklist"]);
-    expect(await skillNames(t, (await agentByRole(t, "cto")).skillIds)).toEqual(["fhara-mcp"]);
-
-    // The user edits one, deletes another and detaches a third from Frontend.
+    const qa = await agentByRole(t, "qa");
     const byKey = new Map(seeded.map((s) => [s.builtin!, s._id]));
+    expect(qa.skillIds).toEqual(builtinSkillKeysForRole("qa").map((key) => byKey.get(key)));
+
+    // The user edits one, deletes another and detaches a third from QA.
     await t.run(async (ctx) => {
       await ctx.db.patch(byKey.get("frontend-design")!, { instructions: "my own text" });
       await ctx.db.delete(byKey.get("web-interface-guidelines")!);
-      const d = (await ctx.db.query("agents").collect()).find((a) => a.role === "frontend")!;
-      await ctx.db.patch(d._id, {
-        skillIds: (d.skillIds ?? []).filter((id) => id !== byKey.get("ui-ux-rules") && id !== byKey.get("web-interface-guidelines")),
+      const agent = (await ctx.db.query("agents").collect()).find((a) => a.role === "qa")!;
+      await ctx.db.patch(agent._id, {
+        skillIds: (agent.skillIds ?? []).filter((id) => id !== byKey.get("ui-ux-rules") && id !== byKey.get("web-interface-guidelines")),
       });
     });
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
@@ -115,9 +90,9 @@ describe("built-in skill seeding", () => {
     const after = await t.run(async (ctx) => (await ctx.db.query("skills").collect()).filter((s) => s.builtin));
     expect(after).toHaveLength(BUILTIN_SKILLS.length - 1);
     expect(after.find((s) => s.builtin === "frontend-design")!.instructions).toBe("my own text");
-    const frontendAfter = await agentByRole(t, "frontend");
-    expect(frontendAfter.skillIds).not.toContain(byKey.get("ui-ux-rules"));
-    expect(frontendAfter.builtinSkillsApplied).toEqual(expect.arrayContaining(builtinSkillKeysForRole("frontend")));
+    const qaAfter = await agentByRole(t, "qa");
+    expect(qaAfter.skillIds).not.toContain(byKey.get("ui-ux-rules"));
+    expect(qaAfter.builtinSkillsApplied).toEqual(expect.arrayContaining(builtinSkillKeysForRole("qa")));
   });
 
   test("a same-named library skill is adopted, not duplicated", async () => {
@@ -128,7 +103,7 @@ describe("built-in skill seeding", () => {
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
     const rows = await t.run(async (ctx) => (await ctx.db.query("skills").collect()).filter((s) => s.name === "frontend-design"));
     expect(rows.map((r) => r._id)).toEqual([mine]);
-    expect((await agentByRole(t, "frontend")).skillIds).toContain(mine);
+    expect((await agentByRole(t, "qa")).skillIds).toContain(mine);
   });
 
   test("Browse marks a seeded built-in as installed", () => {

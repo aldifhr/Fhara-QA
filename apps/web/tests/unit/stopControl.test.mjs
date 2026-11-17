@@ -95,7 +95,7 @@ test("chat Stop calls chatReplies.stopReply with the in-flight user message; bot
   assert.match(hook, /useMutation\(api\.chatReplies\.stopReply\)/);
   assert.match(hook, /stopReply\(\{ messageId: messageId as any \}\)/);
   assert.match(hook, /inFlightReply\(/);
-  for (const panel of ["components/ChatPanel.tsx", "components/chat/PersonalChatPanel.tsx"]) {
+  for (const panel of ["components/ChatPanel.tsx"]) {
     const src = read(panel);
     assert.match(src, /useReplyStop\(timeline\)/, panel);
     assert.match(src, /stop=\{replyStop\}/, panel);

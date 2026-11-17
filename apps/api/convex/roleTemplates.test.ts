@@ -52,13 +52,16 @@ describe("role templates as seeds", () => {
     }
     // Retired roles keep their old seed texts for stored agents, but have no
     // live prompt template in the fixed-team roster.
-    const preO2Support = (PREVIOUS_SEED_PROMPTS.support ?? []).filter(isTemplateText);
-    expect(preO2Support).toHaveLength(2);
-    expect(preO2Support[0]).toMatch(/^# Support Specialist\n/);
+    const retiredSupportSeeds = PREVIOUS_SEED_PROMPTS.support ?? [];
+    expect(retiredSupportSeeds.length).toBeGreaterThan(0);
+    expect(retiredSupportSeeds[0]).toMatch(/^You are the Support Specialist/);
+    for (const role of ["cto", "frontend", "backend", "designer", "support"]) {
+      expect(roleTemplateFor(role)).toBe(ROLE_PROMPT_TEMPLATES.qa);
+    }
   });
 
-  test("legacy and label roles resolve to their successor's template; custom roles have none", () => {
-    expect(roleTemplateFor("UI/UX")).toBe(ROLE_PROMPT_TEMPLATES.designer);
+  test("legacy and label roles resolve to the QA template; custom roles have none", () => {
+    expect(roleTemplateFor("UI/UX")).toBe(ROLE_PROMPT_TEMPLATES.qa);
     expect(roleTemplateFor("QA")).toBe(ROLE_PROMPT_TEMPLATES.qa);
     expect(roleTemplateFor("data-wrangler")).toBeNull();
   });
@@ -67,30 +70,30 @@ describe("role templates as seeds", () => {
 describe("fixed-team sync with the templates", () => {
   test("unedited one-line seeds follow the template, customised prompts stay", async () => {
     const t = makeT();
-    const custom = `${oldSeed("backend")} Prefer Postgres.`;
+    const custom = `${oldSeed("qa")} Prefer table-driven tests.`;
     const ids = await t.run(async (ctx) => ({
-      cto: await ctx.db.insert("agents", {
-        name: "CTO", role: "cto", status: "idle", isEnabled: true, description: "d",
-        capabilities: ["architecture", "project-coordination"], supportedTools: ["read_file"], systemPrompt: oldSeed("cto"),
+      seed: await ctx.db.insert("agents", {
+        name: "Assistant", role: "qa", status: "idle", isEnabled: true, description: "d",
+        capabilities: ["browser-testing"], supportedTools: ["read_file", "write_file", "run_command"], systemPrompt: oldSeed("qa"),
       }),
-      backend: await ctx.db.insert("agents", {
-        name: "Backend", role: "backend", status: "idle", isEnabled: true, description: "d",
-        capabilities: ["backend"], supportedTools: ["read_file", "write_file", "run_command"], systemPrompt: custom,
+      custom: await ctx.db.insert("agents", {
+        name: "QA 2", role: "qa", status: "idle", isEnabled: true, description: "d",
+        capabilities: ["browser-testing"], supportedTools: ["read_file"], systemPrompt: custom,
       }),
     }));
     await t.mutation(internal.agents.syncFixedTeamInternal, {});
-    const rows = await t.run(async (ctx) => ({ cto: await ctx.db.get(ids.cto), backend: await ctx.db.get(ids.backend) }));
-    expect(rows.cto?.systemPrompt).toBe(ROLE_PROMPT_TEMPLATES.cto);
-    expect(rows.backend?.systemPrompt).toBe(custom);
+    const rows = await t.run(async (ctx) => ({ seed: await ctx.db.get(ids.seed), custom: await ctx.db.get(ids.custom) }));
+    expect(rows.seed?.systemPrompt).toBe(ROLE_PROMPT_TEMPLATES.qa);
+    expect(rows.custom?.systemPrompt).toBe(custom);
 
     // The deploy step reports the customised agent and leaves it alone…
     const result = await t.mutation(internal.agentPrompts.applyRoleTemplates, {});
-    expect(result.customised).toContain("Backend");
-    expect(await t.run(async (ctx) => (await ctx.db.get(ids.backend))?.systemPrompt)).toBe(custom);
+    expect(result.customised).toContain("QA 2");
+    expect(await t.run(async (ctx) => (await ctx.db.get(ids.custom))?.systemPrompt)).toBe(custom);
     // …unless forced.
     const forced = await t.mutation(internal.agentPrompts.applyRoleTemplates, { force: true });
-    expect(forced.reset).toContain("Backend");
-    expect(await t.run(async (ctx) => (await ctx.db.get(ids.backend))?.systemPrompt)).toBe(ROLE_PROMPT_TEMPLATES.backend);
+    expect(forced.reset).toContain("QA 2");
+    expect(await t.run(async (ctx) => (await ctx.db.get(ids.custom))?.systemPrompt)).toBe(ROLE_PROMPT_TEMPLATES.qa);
   });
 
   test("the deploy step also updates an extra agent with an unedited seed", async () => {
@@ -130,14 +133,14 @@ describe("reset to role template", () => {
 
 describe("create form prefill", () => {
   test("picking a role fills its template; switching roles swaps an untouched template", () => {
-    expect(prefillPromptForRole("", "frontend")).toBe(ROLE_PROMPT_TEMPLATES.frontend);
-    expect(prefillPromptForRole(ROLE_PROMPT_TEMPLATES.frontend, "backend")).toBe(ROLE_PROMPT_TEMPLATES.backend);
+    expect(prefillPromptForRole("", "frontend")).toBe(ROLE_PROMPT_TEMPLATES.qa);
+    expect(prefillPromptForRole(ROLE_PROMPT_TEMPLATES.qa, "backend")).toBe(ROLE_PROMPT_TEMPLATES.qa);
     expect(prefillPromptForRole(oldSeed("qa"), "qa")).toBe(ROLE_PROMPT_TEMPLATES.qa);
     expect(prefillPromptForRole(ROLE_PROMPT_TEMPLATES.qa, null)).toBe("");
   });
 
   test("text the user typed is kept", () => {
-    expect(prefillPromptForRole("You review SQL only.", "backend")).toBe("You review SQL only.");
-    expect(prefillPromptForRole(`${ROLE_PROMPT_TEMPLATES.frontend}\nUse Vue.`, "backend")).toBe(`${ROLE_PROMPT_TEMPLATES.frontend}\nUse Vue.`);
+    expect(prefillPromptForRole("You review SQL only.", "qa")).toBe("You review SQL only.");
+    expect(prefillPromptForRole(`${ROLE_PROMPT_TEMPLATES.qa}\nUse Vue.`, "qa")).toBe(`${ROLE_PROMPT_TEMPLATES.qa}\nUse Vue.`);
   });
 });

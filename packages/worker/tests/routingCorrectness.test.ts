@@ -1,12 +1,12 @@
 /**
- * Plan 040 (P2): routing correctness.
- * - An unknown role is not Frontend; unmatched work never lands on the CTO
- *   (or any highest-priority fallback): it is BLOCKED with a reason.
+ * Plan 040 (P2): routing correctness — now on the QA-only roster (plan 068).
+ * - An unknown role is not a retired role; unmatched work never lands on the
+ *   highest-priority fallback: it is BLOCKED with a reason.
  * - The planner does not silently drop nodes: work nodes stay (BLOCKED at
  *   run time), helper nodes are dropped with a visible adjustment, and a
- *   code_change on a read-only role becomes an analysis.
+ *   code_change on an agent that may not write becomes an analysis.
  * - One owner rule for fixes: the agent that wrote the code.
- * - No role has a `general` catch-all; security audits go to Backend.
+ * - No role has a `general` catch-all; the single QA role owns browser testing.
  */
 import { describe, expect, it } from "vitest";
 import { routeCapability, unroutedReason } from "@/orchestrator/capabilities";
@@ -22,20 +22,49 @@ import type { AgentDefinition, PlanSubtask } from "@/types";
 
 const policy = loadPolicy();
 
-function fixed(role: keyof typeof ROLES, id = role): AgentDefinition {
+/** The one fixed role in this fork. */
+function qaAgent(id = "qa"): AgentDefinition {
   return {
     _id: id,
-    name: ROLES[role].label,
-    role,
-    capabilities: [...ROLES[role].capabilities],
-    supportedTools: [...ROLES[role].defaultTools],
-    priority: ROLES[role].priority,
+    name: ROLES.qa.label,
+    role: "qa",
+    capabilities: [...ROLES.qa.capabilities],
+    supportedTools: [...ROLES.qa.defaultTools],
+    priority: ROLES.qa.priority,
     isEnabled: true,
   };
 }
 
-const team = (["cto", "frontend", "backend", "qa"] as const).map((role) => fixed(role));
-const byRole = (role: string) => team.find((agent) => agent.role === role)!;
+const QA = qaAgent();
+/** Custom agents keep the declared-tools harness the earlier roster used. */
+const WRITER: AgentDefinition = {
+  _id: "writer",
+  name: "Writer",
+  role: "custom-writer",
+  capabilities: ["frontend-development", "backend-development"],
+  supportedTools: ["read_file", "write_file"],
+  priority: 5,
+  isEnabled: true,
+};
+const NO_WRITE: AgentDefinition = {
+  _id: "nowrite",
+  name: "NoWrite",
+  role: "custom-nowrite",
+  capabilities: ["research", "security-audit"],
+  supportedTools: ["read_file"],
+  priority: 1,
+  isEnabled: true,
+};
+const DOCS: AgentDefinition = {
+  _id: "docs",
+  name: "Docs",
+  role: "custom-docs",
+  capabilities: ["documentation-support"],
+  supportedTools: ["read_file"],
+  priority: 1,
+  isEnabled: true,
+};
+const team = [QA, WRITER, NO_WRITE, DOCS];
 
 function resolverAnswering(content: string): TaskLlmResolver {
   return {
@@ -55,48 +84,47 @@ describe("capability routing: no fallback owner", () => {
     expect(policy.allowFallback).toBe(false);
   });
 
-  it("an unmatched capability routes to nobody (not the CTO)", () => {
+  it("an unmatched capability routes to nobody (not a retired role)", () => {
     expect(routeCapability("quantum-gardening", team)).toBeNull();
     expect(unroutedReason("quantum-gardening", team)).toMatch(/No agent available for capability "quantum-gardening": no enabled agent declares it/);
   });
 
-  it("even the opt-in fallback never picks the CTO", () => {
-    const pick = routeCapability("quantum-gardening", [byRole("cto"), byRole("backend")], { allowFallback: true });
-    expect(pick?.role).toBe("backend");
-    expect(routeCapability("quantum-gardening", [byRole("cto")], { allowFallback: true })).toBeNull();
+  it("even the opt-in fallback cannot conjure an owner from nobody", () => {
+    expect(routeCapability("quantum-gardening", [QA], { allowFallback: true })?._id).toBe("qa");
+    expect(routeCapability("quantum-gardening", [], { allowFallback: true })).toBeNull();
+    expect(routeCapability("quantum-gardening", [NO_WRITE], { allowFallback: true })?._id).toBe("nowrite");
   });
 
-  it("a code-writing capability goes only to a role that may write", () => {
-    const readOnlyClaimingFrontend = { ...byRole("cto"), _id: "d2", capabilities: ["frontend-development"] };
-    expect(routeCapability("frontend-development", [readOnlyClaimingFrontend, byRole("cto")])).toBeNull();
+  it("a code-writing capability goes only to an agent that may write", () => {
+    const readOnlyClaimingFrontend = { ...NO_WRITE, _id: "d2", capabilities: ["frontend-development"] };
+    expect(routeCapability("frontend-development", [readOnlyClaimingFrontend, NO_WRITE])).toBeNull();
     expect(unroutedReason("frontend-development", [readOnlyClaimingFrontend])).toMatch(/may not write files/);
-    expect(routeCapability("frontend-development", team)?.role).toBe("frontend");
+    expect(routeCapability("frontend-development", team)?._id).toBe("writer");
   });
 
-  it("D2/D3: no general catch-all; security-audit is Backend's; conversation is Backend's (O1)", () => {
+  it("D2/D3: no general catch-all; retired security/work capabilities stay with the agents that declare them", () => {
     for (const role of Object.values(ROLES)) expect(role.capabilities).not.toContain("general");
     expect(routeCapability("general", team)).toBeNull();
-    expect(routeCapability("security-audit", team)?.role).toBe("backend");
-    expect(ROLES.cto.capabilities).not.toContain("project-coordination");
+    expect(routeCapability("security-audit", [NO_WRITE])?._id).toBe("nowrite");
+    expect(routeCapability("security-audit", team)?._id).toBe("nowrite");
     expect(classifyCommand("hi").suggestedCapabilities).toEqual(["documentation-support"]);
   });
 
   it("a custom role with a frontend capability routes by capability", () => {
-    const custom: AgentDefinition = { _id: "cx", name: "Custom", role: "custom-x", capabilities: ["frontend-development"], supportedTools: ["read_file", "write_file"], isEnabled: true };
-    expect(routeCapability("frontend-development", [custom, byRole("cto")])?._id).toBe("cx");
-    const noTools: AgentDefinition = { ...custom, _id: "cy", supportedTools: ["read_file"] };
-    expect(routeCapability("frontend-development", [noTools, byRole("cto")])).toBeNull();
+    expect(routeCapability("frontend-development", [WRITER, QA])?._id).toBe("writer");
+    const noTools: AgentDefinition = { ...WRITER, _id: "cy", supportedTools: ["read_file"] };
+    expect(routeCapability("frontend-development", [noTools])).toBeNull();
   });
 });
 
 describe("planner: nodes are never dropped silently", () => {
-  it("conversation reply goes to the topic owner (Backend by default), not the CTO (O1)", () => {
+  it("conversation reply goes to the topic owner, not a retired orchestrator role", () => {
     const plan = heuristicPlan({ command: "hello", classification: classifyCommand("hello"), agents: team, policy });
     expect(plan.subtasks[0].capability).toBe("documentation-support");
-    expect(routeCapability(plan.subtasks[0].capability, team)?.role).toBe("backend");
+    expect(routeCapability(plan.subtasks[0].capability, team)?._id).toBe("docs");
   });
 
-  it("unroutable work stays (blocked), unroutable helpers drop visibly, a CTO code_change becomes analysis", async () => {
+  it("unroutable work stays (blocked), unroutable helpers drop visibly, and a read-only owner makes code_change an analysis", async () => {
     const llmPlan = JSON.stringify({
       goal: "Build pricing page",
       strategy: "dag",
@@ -134,7 +162,7 @@ describe("one fix-owner rule: the agent that wrote the code", () => {
     { key: "be", title: "be", description: "", kind: "code_change", capability: "backend-development", dependencies: [], order: 1, allowedPaths: ["apps/api/convex"] },
     { key: "docs", title: "docs", description: "", kind: "analysis", capability: "documentation-support", dependencies: [], order: 2 },
   ];
-  const writer = { ...byRole("backend"), _id: "be-2", name: "Backend 2" };
+  const writer = { ...WRITER, _id: "be-2", name: "Writer 2" };
   const writerByKey = new Map([["be", writer]]);
 
   it("a finding in a backend file goes to the agent that ran the backend node", () => {
@@ -145,14 +173,14 @@ describe("one fix-owner rule: the agent that wrote the code", () => {
 
   it("without a recorded writer, the owner subtask's capability decides", () => {
     const owner = ownerForFix({ subtasks, findings: [{ filePath: "apps/web/app/page.tsx" }], agents: team });
-    expect(owner?.agent.role).toBe("frontend");
+    expect(owner?.agent._id).toBe("writer");
   });
 
   it("no implementation subtask → nobody (never Support / general)", () => {
     expect(ownerForFix({ subtasks: [subtasks[2]], findings: [{ filePath: "README.md" }], agents: team })).toBeNull();
   });
 
-  it("orchestrator critical findings → the actual implementer, not the first Frontend", () => {
+  it("critical findings go to the actual implementer, not the first writer in the roster", () => {
     const evaluation = evaluateDelegation({
       result: {
         agentId: "qa",

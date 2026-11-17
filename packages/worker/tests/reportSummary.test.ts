@@ -23,15 +23,17 @@ const agent = (role: string, capabilities: string[]): AgentDefinition => ({
   capabilities,
   isEnabled: true,
   priority: 5,
+  supportedTools: ["read_file", "write_file", "run_command"],
 });
 
-// The four fixed roles. Docs are Backend's, research is the CTO's, and QA
-// carries the code-review capability the Reviewer used to own.
+// Retired role names all resolve to `qa`, so distinct report lines need custom
+// agents whose role strings are not legacy aliases. Docs are Backend's,
+// research is the CTO's, and QA carries the code-review capability.
 const TEAM: AgentDefinition[] = [
-  agent("cto", ["architecture", "research"]),
-  agent("frontend", ["frontend-development", "ui-ux-design"]),
-  agent("backend", ["backend-development", "documentation-support", "code-review", "security-audit"]),
-  agent("qa", ["browser-testing", "code-review"]),
+  agent("custom-cto", ["architecture", "research"]),
+  agent("custom-fe", ["frontend-development", "ui-ux-design"]),
+  agent("custom-be", ["backend-development", "documentation-support", "code-review", "security-audit"]),
+  agent("custom-qa", ["browser-testing", "code-review"]),
 ];
 
 const node = (key: string, kind: PlanSubtask["kind"], capability: string): PlanSubtask => ({
@@ -84,8 +86,8 @@ describe("reportSummary: one line per role", () => {
       ],
     });
     expect(lines).toEqual([
-      "Frontend: 2 subtasks done, incl. 1 fix, 4 files changed (index.html, app.css, a.ts, +1 more).",
-      "Backend: 1 subtask done, 1 file changed (routes.ts).",
+      "Custom-fe: 2 subtasks done, incl. 1 fix, 4 files changed (index.html, app.css, a.ts, +1 more).",
+      "Custom-be: 1 subtask done, 1 file changed (routes.ts).",
     ]);
   });
 
@@ -93,10 +95,10 @@ describe("reportSummary: one line per role", () => {
     const lines = buildRoleLines({
       plan: plan([node("x", "analysis", "frontend-development")]),
       agents: TEAM,
-      subtasks: [{ key: "x", kind: "analysis", status: "completed", assignedAgentId: "agent-backend" }],
+      subtasks: [{ key: "x", kind: "analysis", status: "completed", assignedAgentId: "agent-custom-be" }],
       state: state(),
     });
-    expect(lines).toEqual(["Backend: 1 subtask done."]);
+    expect(lines).toEqual(["Custom-be: 1 subtask done."]);
     expect(lines.join(" ")).not.toContain("@");
   });
 
@@ -108,7 +110,7 @@ describe("reportSummary: one line per role", () => {
         subtasks: [{ key: "doc", kind: "code_change", status: "completed" }],
         state: state({ appliedFilesBySubtask: new Map([["doc", ["README.md"]]]) }),
       })
-    ).toEqual(["Backend: 1 subtask done, 1 file changed (README.md)."]);
+    ).toEqual(["Custom-be: 1 subtask done, 1 file changed (README.md)."]);
     expect(
       buildRoleLines({
         plan: plan([node("a", "research", "research"), node("b", "research", "research")]),
@@ -119,7 +121,7 @@ describe("reportSummary: one line per role", () => {
         ],
         state: state(),
       })
-    ).toEqual(["CTO: 1 of 2 subtasks done."]);
+    ).toEqual(["Custom-cto: 1 of 2 subtasks done."]);
   });
 
   it("caps the role lines and names the rest", () => {
@@ -132,7 +134,7 @@ describe("reportSummary: one line per role", () => {
       state: state(),
     });
     expect(lines).toHaveLength(MAX_ROLE_LINES);
-    expect(lines[MAX_ROLE_LINES - 1]).toBe("Also worked: QA, CTO.");
+    expect(lines[MAX_ROLE_LINES - 1]).toBe("Also worked: Custom-qa, Custom-cto.");
   });
 });
 
@@ -190,7 +192,7 @@ describe("reportSummary: review, QA and unfinished evidence", () => {
       subtasks: [{ key: "ui", kind: "analysis", status: "completed" }],
       state: state({ qaVerdicts: { qa: "passed" } }),
     });
-    expect(summary).toMatchObject({ roleLines: ["Frontend: 1 subtask done."], qaLine: "QA: structural browser checks passed.", qaBlocked: false });
+    expect(summary).toMatchObject({ roleLines: ["Custom-fe: 1 subtask done."], qaLine: "QA: structural browser checks passed.", qaBlocked: false });
   });
 });
 
@@ -237,18 +239,18 @@ describe("finalize: the report carries the cross-role summary", () => {
       } as any,
     });
     expect(messages).toHaveLength(1);
-    expect(messages[0].agentId).toBe("agent-frontend");
+    expect(messages[0].agentId).toBe("agent-custom-fe");
     expect(messages[0].content).toBe(
       [
         "Done.",
-        "Frontend: 1 subtask done, 1 file changed (index.html).\nBackend: 1 subtask done.",
+        "Custom-fe: 1 subtask done, 1 file changed (index.html).\nCustom-be: 1 subtask done.",
         "QA: structural browser checks passed. Tested 1 check: page-loads.",
         "Verification: passed.",
       ].join("\n\n")
     );
     expect(messages[0].content).not.toContain("@");
     expect(events.find((e) => e.type === "task.summary")?.payload).toEqual({
-      roles: ["Frontend: 1 subtask done, 1 file changed (index.html).", "Backend: 1 subtask done."],
+      roles: ["Custom-fe: 1 subtask done, 1 file changed (index.html).", "Custom-be: 1 subtask done."],
       qa: "QA: structural browser checks passed. Tested 1 check: page-loads.",
     });
   });

@@ -24,7 +24,7 @@
   ],
   "messages": [
     "system: Planned 1 subtask",
-    "system: Sent to Frontend: impl"
+    "system: Sent to Assistant: impl"
   ],
   "delegations": [],
   "pauses": [

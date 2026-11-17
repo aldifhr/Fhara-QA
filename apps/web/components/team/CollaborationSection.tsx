@@ -122,7 +122,7 @@ export default function CollaborationSection() {
                 ...view.pos.boxOf(n.key),
                 muted: n.weight === 0,
                 label: n.label,
-                title: `${n.label}${n.recognized ? "" : " (custom role)"}`,
+                title: `${n.label}${n.recognized ? "" : " (custom)"}`,
                 children: <span className="truncate text-center text-[12px] font-medium text-ink">{n.label}</span>,
               }))}
             />

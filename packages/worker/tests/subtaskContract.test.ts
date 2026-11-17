@@ -434,17 +434,17 @@ describe("model tier precedence (plan 022)", () => {
 describe("a read-only role may not write files (plan 022)", () => {
   const ctxFor = (agentRole: string) =>
     ({ workspaceRoot: "/tmp/ws", actor: "test", agentRole, audit: async () => undefined }) as ToolContext;
-  it("the broker denies write_file for QA and for the CTO", async () => {
+  it("the broker denies production-path write_file for QA (retired role names resolve to QA)", async () => {
     for (const role of ["qa", "cto"]) {
       const write = await tool_call({ ctx: ctxFor(role), supportedTools: ["write_file", "run_command", "read_file"], name: "write_file", args: { path: "a.ts", content: "x" } });
       expect(write.ok, role).toBe(false);
-      expect(write.reason).toBe(`denied:${role}:write_file:read-only-role`);
+      expect(write.reason).toBe(`denied:${role}:write_file:path-not-allowed-for-role`);
     }
   });
-  it("a shell-less role may not run commands; QA may run its verification", async () => {
-    const cto = await tool_call({ ctx: ctxFor("cto"), supportedTools: ["run_command"], name: "run_command", args: { command: "npm run test" } });
-    expect(cto.ok).toBe(false);
-    expect(cto.reason).toBe("denied:cto:run_command:read-only-role");
+  it("an agent without run_command may not use it; QA may run its verification", async () => {
+    const noTool = await tool_call({ ctx: ctxFor("qa"), supportedTools: ["read_file"], name: "run_command", args: { command: "npm run test" } });
+    expect(noTool.ok).toBe(false);
+    expect(noTool.reason).toBe("tool-unknown");
     // QA's shell is "verify": the broker does not refuse the tool outright.
     const qa = await tool_call({ ctx: ctxFor("qa"), supportedTools: ["run_command"], name: "run_command", args: { command: "npm run test" } });
     expect(qa.reason).not.toBe("denied:qa:run_command:read-only-role");

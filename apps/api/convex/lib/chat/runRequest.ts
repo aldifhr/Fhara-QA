@@ -13,7 +13,7 @@
 /** Mirror of ALLOWED_ARGV (packages/worker/src/utils/commandAllowlist.ts). */
 export const CHAT_ALLOWED_ARGV: Readonly<Record<string, ReadonlyArray<ReadonlyArray<string>>>> = {
   npm: [["run", "test"], ["run", "build"], ["run", "typecheck"]],
-  npx: [["tsc", "--noEmit"]],
+  npx: [["tsc", "--noEmit"], ["playwright", "test", "--reporter=json"]],
   git: [
     ["status"],
     ["status", "--short"],

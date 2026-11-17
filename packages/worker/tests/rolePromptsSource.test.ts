@@ -34,19 +34,17 @@ describe("role prompt templates", () => {
 
   test.each(ROLE_KEYS)("the %s template reports only its own part and stays persona-free", (key) => {
     const text = ROLE_PROMPT_TEMPLATES[key];
-    expect(text).toMatch(/Response Owner/);
-    expect(text).toMatch(/only your own|own part|own subtask|own review/i);
+    expect(text).toMatch(/report only your own work|only your own|own part|own subtask|own review/i);
     expect(text).not.toMatch(/lazy senior/i);
   });
 
-  test("read-only roles say so", () => {
-    for (const key of ["cto", "qa", "designer"] as const) {
-      expect(ROLE_PROMPT_TEMPLATES[key]).toMatch(/read-only/i);
-    }
+  test("qa states its test-path-only write boundary", () => {
+    expect(ROLE_PROMPT_TEMPLATES.qa).toMatch(/Write only test paths/);
+    expect(ROLE_PROMPT_TEMPLATES.qa).toMatch(/Never modify application code/);
   });
 
-  test("writer roles describe verified code changes in their own scope", () => {
-    expect(ROLE_PROMPT_TEMPLATES.frontend).toMatch(/Frontend Developer/);
-    expect(ROLE_PROMPT_TEMPLATES.backend).toMatch(/Backend Developer/);
+  test("qa describes spec generation and evidence in its own scope", () => {
+    expect(ROLE_PROMPT_TEMPLATES.qa).toMatch(/Generate executable test specs/);
+    expect(ROLE_PROMPT_TEMPLATES.qa).toMatch(/Report only tests and checks that were actually executed/);
   });
 });

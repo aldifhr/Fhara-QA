@@ -39,7 +39,7 @@ const picker = `${field} h-9 w-auto max-w-[240px] bg-canvas py-1 text-[13px]`;
 const SCOPE_HINT: Record<MemoryScope, string> = {
   shared: "Every agent, in every project",
   project: "Every agent working in this project",
-  agent: "This role, in every project",
+  agent: "This assistant, in every project",
 };
 const ROLE_PROJECT_HINT = "This role's own notes in this project. Roles write these themselves after their work; other roles never see them";
 
@@ -188,7 +188,7 @@ function MemoryInner() {
               options={[
                 { value: "shared", label: "Shared" },
                 { value: "project", label: "Project" },
-                { value: "agent", label: "Role" },
+                { value: "agent", label: "Assistant" },
               ]}
             />
             {scope === "project" && (
@@ -206,7 +206,7 @@ function MemoryInner() {
             )}
             {scope === "agent" && (
               <select
-                aria-label="Role"
+                aria-label="Assistant"
                 value={agentId}
                 onChange={(e) => setParam({ agent: e.target.value })}
                 className={picker}

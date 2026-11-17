@@ -64,9 +64,9 @@
   ],
   "messages": [
     "system: Planned 1 subtask",
-    "system: Sent to Frontend: ui",
+    "system: Sent to Assistant: ui",
     "ui: @QA Check it in a browser",
-    "system: Sent to QA: Delegated work",
+    "system: Sent to Assistant: Delegated work",
     "-: QA checks passed.  Structural checks only — no visual comparison. Task-specific behaviour was not asserted automatically.",
     "-: Done.\n\nQA: structural browser checks passed.\n\nVerification: passed."
   ],

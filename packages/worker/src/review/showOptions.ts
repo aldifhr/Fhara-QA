@@ -95,15 +95,10 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Default purpose by role: Designer reviews are design reviews. */
+/** No role-specific option purposes in this fork: the single agent has none. */
 export function purposeFor(role: string, raw: unknown): OptionsReviewPurpose {
+  void role;
   if (isPurpose(raw)) return raw;
-  const key = role.trim().toLowerCase();
-  if (key === "designer" || key === "frontend") return "design";
-  if (key === "cto") return "architecture";
-  if (key === "backend") return "schema";
-  if (key === "researcher") return "research";
-  if (key === "devops") return "deploy";
   return "other";
 }
 

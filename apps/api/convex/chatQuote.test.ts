@@ -105,7 +105,7 @@ describe("reply quote routing", () => {
     expect(replies.map((r) => r.agentId)).toEqual([frontendId]);
 
     expect(calls).toHaveLength(1);
-    const line = `The user is replying to Frontend's message: "I'd move the header into components/Header.tsx."`;
+    const line = `The user is replying to Assistant's message: "I'd move the header into components/Header.tsx."`;
     expect(calls[0].system).toContain(line);
     // The line lives in the system prompt only; the user's reply is the
     // last chat message and no system-role row sits in the history.
@@ -127,7 +127,7 @@ describe("reply quote routing", () => {
     });
     const replies = await repliesTo(t, messageId);
     expect(replies.map((r) => r.agentId)).toEqual([designerId]);
-    expect(calls[0].system).toContain(`The user is replying to Frontend's message: "Header first."`);
+    expect(calls[0].system).toContain(`The user is replying to Assistant's message: "Header first."`);
   });
 
   test("a quoted CTO message and the user's own message route as usual, with the context line", async () => {
@@ -137,7 +137,7 @@ describe("reply quote routing", () => {
     );
     const first = await send(t, { projectId, content: "kenapa header dulu?", preferredAgentIds: [ctoId], quotedMessageId: ctoMsg });
     expect((await repliesTo(t, first.messageId)).map((r) => r.agentId)).toEqual([ctoId]);
-    expect(calls[0].system).toContain(`The user is replying to CTO's message: "Plan: header, then footer."`);
+    expect(calls[0].system).toContain(`The user is replying to Assistant's message: "Plan: header, then footer."`);
 
     calls.length = 0;
     const second = await send(t, {
@@ -185,8 +185,8 @@ describe("quote helpers", () => {
 
   test("context line caps the quoted text at about 600 chars", () => {
     const line = quoteContextLine({ authorType: "agent", role: "designer", content: "b".repeat(2000) });
-    // Designer is a live role again, so its stored messages keep their label.
-    expect(line.startsWith(`The user is replying to Designer's message: "`)).toBe(true);
+    // A retired role's stored messages resolve to the QA "Assistant" label.
+    expect(line.startsWith(`The user is replying to Assistant's message: "`)).toBe(true);
     expect(line.length).toBeLessThan(700);
   });
 });

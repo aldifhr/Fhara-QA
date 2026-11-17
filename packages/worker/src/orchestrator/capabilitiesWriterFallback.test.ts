@@ -7,10 +7,11 @@ describe("routeCapability writer fallback (plan 040: opt-in only)", () => {
   it("unheld frontend work routes to nobody by default (BLOCKED, no guess)", () => {
     expect(routeCapability("frontend-development", [qa, backend])).toBeNull();
   });
-  it("with the opt-in fallback, it goes to an agent that can write, not QA", () => {
-    expect(routeCapability("frontend-development", [qa, backend], { allowFallback: true })?._id).toBe("be");
+  it("with the opt-in fallback, it goes to an agent that may write (QA writes test paths)", () => {
+    expect(routeCapability("frontend-development", [qa, backend], { allowFallback: true })?._id).toBe("qa");
   });
-  it("never to a role that may not write, even with the fallback", () => {
-    expect(routeCapability("frontend-development", [qa], { allowFallback: true })).toBeNull();
+  it("never to an agent that may not write, even with the fallback", () => {
+    const noWrite = { ...qa, _id: "nowrite", role: "custom-nowrite", supportedTools: ["read_file"] };
+    expect(routeCapability("frontend-development", [noWrite], { allowFallback: true })).toBeNull();
   });
 });

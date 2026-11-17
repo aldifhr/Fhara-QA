@@ -106,7 +106,7 @@ describe("syntax gate in the implementer (one reflection, never an approval with
       command: "wrap the card text in a bold tag in src/Card.tsx",
       plan: { version: 1, goal: "g", strategy: "single", requiresApproval: false, maxConcurrency: 1, subtasks: [] },
       subtask: { key: "ui", title: "ui", description: "Bold card text in src/Card.tsx", kind: "code_change", capability: "frontend-development", dependencies: [], order: 0 },
-      agent: { _id: "a", name: "Frontend", role: "frontend", capabilities: ["frontend-development"] },
+      agent: { _id: "a", name: "Writer", role: "custom-writer", capabilities: ["frontend-development"], supportedTools: ["read_file", "write_file", "run_command"] },
       llmHandles: [handle],
       priorOutputs: new Map(),
       fileChanges: [],

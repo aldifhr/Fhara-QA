@@ -143,11 +143,9 @@ export default function CommandMenu({ open, onClose, projectId }: { open: boolea
     links.map((l) => ({ key: l.label, label: l.label, icon: l.icon, run: l.href ? go(l.href) : act(() => l.onClick?.()) }));
   const work: Entry[] = [
     { key: "projects", label: "Projects", icon: FolderKanban, run: go("/chats") },
-    { key: "personal", label: "Personal messages", icon: MessageCircle, keywords: "direct", run: go("/messages") },
     { key: "team", label: "Team", icon: Users, keywords: "agents", run: go(teamHref) },
   ];
   const observeEntries: Entry[] = [
-    { key: "inbox", label: "Inbox", icon: Inbox, keywords: "needs you approvals", run: go("/inbox") },
     ...fromLinks(observe),
   ];
   const recentEntries: Entry[] = recent.map((t) => ({

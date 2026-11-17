@@ -68,8 +68,8 @@ describe("task brief on the worker (plan L3)", () => {
     });
     expect(llm).not.toHaveBeenCalled();
     const arg = updateTaskBrief.mock.calls[0][0] as Record<string, string>;
-    expect(arg.latestResult).toBe("Frontend · s1 (Write toggle) completed: Added Toggle.tsx");
-    expect(arg.nextStep).toBe("QA · s2 (Review toggle)");
+    expect(arg.latestResult).toBe("Assistant · s1 (Write toggle) completed: Added Toggle.tsx");
+    expect(arg.nextStep).toBe("Assistant · s2 (Review toggle)");
     expect(arg.owner).toBe("reviewer");
     expect(arg).not.toHaveProperty("objective");
     expect(arg).not.toHaveProperty("openQuestions");

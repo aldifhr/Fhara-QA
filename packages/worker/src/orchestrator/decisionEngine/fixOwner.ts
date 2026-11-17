@@ -1,7 +1,8 @@
 import type { AgentDefinition, PlanSubtask } from "@/types";
 import { CAPABILITY } from "@/types";
 import type { ReviewFinding } from "@/utils/json";
-import { QA_FIX_INTRO, VERIFY_FIX_INTRO } from "@/prompts/fix";
+import { QA_FIX_INTRO, QA_HEAL_SPEC_INTRO, VERIFY_FIX_INTRO } from "@/prompts/fix";
+import { isSpecHealingFinding } from "@/utils/playwrightAutomation";
 import { normalizeCapability } from "../capabilities";
 import { ownerForFix, pickFixOwner, type FixCandidate } from "../ownership";
 import { buildFixSubtask, buildReviewFixSubtask } from "../reviewLoop";
@@ -102,11 +103,15 @@ export function decideFixOwner(
   if (facts.stage === "review") {
     node = buildReviewFixSubtask({ iteration: n, findings: facts.findings, capability, order });
   } else if (facts.stage === "qa") {
+    // Locator/timeout failures are spec defects: heal the spec, never weaken
+    // an assertion or change production code (plan 068, healer).
+    const healSpec =
+      facts.findings.length > 0 && facts.findings.every((f) => isSpecHealingFinding(f.description));
     node = {
       ...buildFixSubtask({
         key: uniqueKey(`fix_qa_${n}`),
-        title: `Address QA failures (iteration ${n})`,
-        intro: QA_FIX_INTRO,
+        title: healSpec ? `Heal generated spec (iteration ${n})` : `Address QA failures (iteration ${n})`,
+        intro: healSpec ? QA_HEAL_SPEC_INTRO : QA_FIX_INTRO,
         findings: facts.findings,
         capability,
         order,

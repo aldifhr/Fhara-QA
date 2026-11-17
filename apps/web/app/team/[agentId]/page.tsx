@@ -80,19 +80,11 @@ export default function AgentProfilePage() {
                   <p className="text-[13px] text-ink-3">
                     {p.agent.runtime === "opencode" ? "OpenCode" : "Built-in"}
                     {` · concurrency ${p.agent.maxConcurrency ?? 1}`}
-                    {p.agent.recognized ? "" : " · custom role"}
+                    {p.agent.recognized ? "" : " · custom"}
                   </p>
                 }
                 actions={
                 <div className="flex items-center gap-2">
-                  {p.agent.enabled && (
-                    <Link
-                      href={`/message/${agentId}`}
-                      className={HEADER_ACTION}
-                    >
-                      Chat
-                    </Link>
-                  )}
                   {projects && projects.length > 1 && (
                     <select
                       aria-label="Project"

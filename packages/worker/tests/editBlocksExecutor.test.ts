@@ -18,8 +18,9 @@ import type { FileDiff } from "@/tools/gitDiff";
 const AGENT: AgentDefinition = {
   _id: "agent-implementer",
   name: "Implementer",
-  role: "frontend",
+  role: "custom-implementer",
   capabilities: ["frontend-development"],
+  supportedTools: ["read_file", "write_file", "run_command"],
   isEnabled: true,
   priority: 0,
 };

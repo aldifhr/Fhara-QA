@@ -11,7 +11,7 @@ import { roleKeyForMention } from "@/lib/agentRoles";
 import { maskSecrets as maskSecretsIn, unmaskText } from "@/lib/secretMask";
 
 /**
- * `@Role` mentions (from the user, or the CTO handing off to "@QA",
+ * `@Assistant` mentions (from the user, or the CTO handing off to "@QA",
  * "@Frontend", …). A mention starts after whitespace/start/"(" and must not
  * continue into a path (`@src/app.tsx`) or file name (`@page.tsx`).
  */

@@ -125,11 +125,11 @@
   ],
   "messages": [
     "system: Planned 3 subtasks",
-    "system: Sent to Frontend: ui",
-    "system: Sent to Backend: api",
-    "system: Sent to QA: qa",
-    "system: Sent to Frontend: Address QA failures (iteration 1)",
-    "system: Sent to QA: qa"
+    "system: Sent to Assistant: ui",
+    "system: Sent to Assistant: api",
+    "system: Sent to Assistant: qa",
+    "system: Sent to Assistant: Address QA failures (iteration 1)",
+    "system: Sent to Assistant: qa"
   ],
   "delegations": [],
   "pauses": [],

@@ -67,7 +67,7 @@ export default function AgentConfigureForm({ agent, onDirtyChange }: { agent: Ag
 
   async function save() {
     if (!draft.name.trim()) return setError("Name is required");
-    if (!draft.role.trim()) return setError("Role is required. Pick one from the list.");
+    if (!draft.role.trim()) return setError("Choose an assistant from the list.");
     setError(null);
     setSaving(true);
     try {
@@ -93,7 +93,7 @@ export default function AgentConfigureForm({ agent, onDirtyChange }: { agent: Ag
     try {
       const res = await resetPrompt({ agentId: agent._id as never });
       set("systemPrompt", res.systemPrompt);
-      toast("success", "Instructions reset", `${roleLabel(agent.role)} role template applied`);
+      toast("success", "Instructions reset", `${roleLabel(agent.role)} template applied`);
       setConfirmReset(false);
     } catch (err) {
       toast("error", "Reset failed", err instanceof Error ? err.message : "Could not reset the instructions");
@@ -154,8 +154,8 @@ export default function AgentConfigureForm({ agent, onDirtyChange }: { agent: Ag
                   <Wand2 size={14} />
                 </button>
               </div>
-              <select aria-label="Role" value={draft.role} onChange={(e) => set("role", e.target.value)} className={INSPECTOR_INPUT}>
-                {!draft.role && <option value="">Choose a role</option>}
+              <select aria-label="Assistant" value={draft.role} onChange={(e) => set("role", e.target.value)} className={INSPECTOR_INPUT}>
+                {!draft.role && <option value="">Choose an assistant</option>}
                 {roleOptionsFor(draft.role).map((role) => (
                   <option key={role} value={role}>
                     {roleLabel(role)}
@@ -183,14 +183,14 @@ export default function AgentConfigureForm({ agent, onDirtyChange }: { agent: Ag
             value={draft.systemPrompt}
             onChange={(e) => set("systemPrompt", e.target.value)}
             rows={7}
-            placeholder="Leave empty to use the role's default instructions."
+            placeholder="Leave empty to use the default instructions."
             className={`${INSPECTOR_INPUT} resize-y leading-relaxed`}
           />
         </InspectorField>
 
         <InspectorField
           label="Tool permissions"
-          hint={agent.supportedTools ? "Custom for this agent. Unchecking everything falls back to the role defaults." : "Role defaults until you change them."}
+          hint={agent.supportedTools ? "Custom for this agent. Unchecking everything falls back to the defaults." : "Defaults until you change them."}
         >
           <div className="grid gap-1.5">
             {AGENT_TOOL_OPTIONS.map((option) => (
@@ -222,8 +222,8 @@ export default function AgentConfigureForm({ agent, onDirtyChange }: { agent: Ag
         request={
           confirmReset
             ? {
-                title: "Reset to role template?",
-                message: `This replaces ${agent.name}'s instructions with the ${roleLabel(agent.role)} role template and saves it now. Your current instructions are lost.`,
+                title: "Reset to template?",
+                message: `This replaces ${agent.name}'s instructions with the ${roleLabel(agent.role)} default template and saves it now. Your current instructions are lost.`,
                 confirmLabel: "Reset",
                 icon: "restore",
               }

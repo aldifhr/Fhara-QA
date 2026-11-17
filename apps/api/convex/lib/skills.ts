@@ -14,7 +14,8 @@ export const SKILL_INSTRUCTIONS_MAX = 20_000;
 export const SKILL_TAG_MAX = 32;
 export const SKILL_TAGS_MAX = 12;
 /** Total characters all attached skills may add to one agent prompt. */
-export const SKILLS_PROMPT_BUDGET = 12_000;
+/** QA-only fork: the single assistant carries every built-in skill, so the inline budget is larger than the upstream four-role team needed. */
+export const SKILLS_PROMPT_BUDGET = 20_000;
 
 /**
  * Largest body a skill may STORE (imports keep the whole SKILL.md up to

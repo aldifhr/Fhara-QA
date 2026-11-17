@@ -524,23 +524,24 @@ describe("registry read models (addendum §1)", () => {
 });
 
 describe("a project with no agentIds runs with the fixed team", () => {
-  test("ensureForChat seeds nobody and chat context still has agents (no 'No enabled agents')", async () => {
+  test("ensureForChat seeds nobody and chat context still has the QA agent (no 'No enabled agents')", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {
       const cto = await ctx.db.insert("agents", { name: "CTO", role: "cto", status: "idle", isEnabled: true });
-      const fe = await ctx.db.insert("agents", { name: "Frontend", role: "frontend", status: "idle", isEnabled: true });
+      const qa = await ctx.db.insert("agents", { name: "Assistant", role: "qa", status: "idle", isEnabled: true });
       await ctx.db.insert("agents", { name: "Lead", role: "lead", status: "idle", isEnabled: false });
       const projectId = await ctx.db.insert("projects", { name: "API made", workspacePath: "/tmp/api-made" });
-      return { cto, fe, projectId };
+      return { cto, qa, projectId };
     });
     const conversationId = await t.mutation(internal.conversations.ensureForChat, { projectId: ids.projectId });
     const participants = await t.query(api.conversations.getParticipants, { conversationId });
     expect(participants).toHaveLength(0);
     const context = await t.query(internal.chatContext.getContext, { projectId: ids.projectId, conversationId });
-    expect(context.agents.map((a: { _id: string }) => a._id)).toEqual([ids.fe]);
-    expect((context.team ?? []).map((a: { _id: string }) => a._id).sort()).toEqual([ids.cto, ids.fe].sort());
+    // Plan 068: the fixed team is just QA; legacy roles are not in the roster.
+    expect(context.agents.map((a: { _id: string }) => a._id)).toEqual([ids.qa]);
+    expect((context.team ?? []).map((a: { _id: string }) => a._id).sort()).toEqual([ids.qa].sort());
     // Without a conversation (legacy path) the same default answers.
     const legacy = await t.query(internal.chatContext.getContext, { projectId: ids.projectId });
-    expect(legacy.agents.map((a: { _id: string }) => a._id)).toEqual([ids.fe]);
+    expect(legacy.agents.map((a: { _id: string }) => a._id)).toEqual([ids.qa]);
   });
 });

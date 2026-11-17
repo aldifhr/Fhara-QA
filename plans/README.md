@@ -68,6 +68,7 @@ execution order and a definition of done.
 | 065 | [Worktrees under ~/.fhara/worktrees, old branding cleaned](065-worktrees-under-fhara-home.md) | P1 | S | — | DONE (2026-11-17: default base moved to ~/.fhara/worktrees; legacy .moagent-worktrees recognized + auto-pruned when empty + always git-excluded; worker dirty-check and deny-list updated; bonus: gitInitLane tests fixed on Windows) |
 | 066 | [Codex & Claude Code as sibling task-model sources (UI + registry)](066-codex-claude-provider-rows.md) | P1 | M | 058 | DONE (2026-11-17: CLI family helpers + per-CLI validation; setEnabled/status/cliRow per cli; chat/run pools exclude the family; UI sibling rows + presets + typed ids; smoke: Codex entry added and listed; routing per-model = follow-up plan) |
 | 067 | [Match the workspace mockup (accent + rail + sidebar + chat restyle)](067-mockup-parity.md) | P1 | L | — | IN PROGRESS (all 5 stages landed 2026-11-17: accent tokens + guard, rail, NeedsYou cards, chat surface restyle incl. composer @ / buttons and TaskCard ref/due, QA wording; guards + web typecheck + 197/198 web tests green; only the light+dark visual smoke remains) |
+| 068 | [QA-only fork with Playwright automation](068-qa-only-playwright-automation.md) | P1 | L | — | IN PROGRESS (QA-only roster, automation core, Playwright exact-argv gate, healer classification, thread bar + auto mode landed; full worker suite has environment-only failures) |
 
 Allowed states: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED: <reason>`,
 `REJECTED: <reason>`.

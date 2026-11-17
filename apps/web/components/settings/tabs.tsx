@@ -543,8 +543,8 @@ export function DevicesTab() {
           description={
             <>
               Start Fhara with <code className="font-mono">FHARA_BIND_TAILSCALE=1</code> in the root <code className="font-mono">.env</code>. The web
-              server then also listens on this machine&apos;s Tailscale address (the terminal prints the URL), and nowhere else. Open{" "}
-              <code className="font-mono">/inbox</code> there on your phone. Fhara adds no login: only devices signed in to your tailnet can
+              server then also listens on this machine&apos;s Tailscale address (the terminal prints the URL), and nowhere else. Open a{" "}
+              project thread there on your phone. Fhara adds no login: only devices signed in to your tailnet can
               reach it. Approvals you make there expire 10 minutes after they were shown, and are refused if they changed.
               {origin ? (
                 <span className="block">

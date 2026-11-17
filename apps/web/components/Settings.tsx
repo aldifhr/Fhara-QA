@@ -528,10 +528,10 @@ function SettingsModal({
                       <span className="min-w-0">
                         <span className="block text-[13px] font-medium text-ink">Mentions</span>
                         <span className="block text-[11.5px] leading-relaxed text-ink-3 mt-0.5">
-                          @mention a teammate to route the reply to that role.
+                          @mention the assistant to route the reply there.
                         </span>
                       </span>
-                      <span className="shrink-0 text-[12px] text-ink-3">Role-based</span>
+                      <span className="shrink-0 text-[12px] text-ink-3">Per assistant</span>
                     </div>
                   </div>
                 </section>

@@ -419,14 +419,13 @@ describe("Skill v2 import: dependencies, permissions, versions, update all", () 
     const v1 = await t.query(api.skills.versions, { skillId: ids.get("top")! });
     expect(v1.map((v) => [v.version, v.kind, v.author, v.sourceSha])).toEqual([[1, "import", "github:emilkowalski/skills", "s1"]]);
 
-    // Assigning top pulls base in; the CTO is warned about run_command (the
-    // only live role whose shell is "none"; QA may run tests).
+    // Assigning top pulls base in; the agent is warned about run_command.
     const cto = await t.run((ctx) => ctx.db.insert("agents", { name: "CTO", role: "cto", status: "idle", isEnabled: true }));
     const assigned = await t.mutation(api.agents.setSkills, { agentId: cto, skillIds: [ids.get("top")!] });
     expect(assigned.skillIds).toEqual([ids.get("top"), ids.get("base")]);
     expect(assigned.warnings).toEqual([
-      'Also added "base" to CTO: required by "top".',
-      'CTO lacks run commands, which "top" needs. Skills never grant tools.',
+      'Also added "base" to Assistant: required by "top".',
+      'Assistant lacks run commands, which "top" needs. Skills never grant tools.',
     ]);
     await t.mutation(api.skills.setPin, { agentId: cto, skillId: ids.get("top")!, version: 1 });
 

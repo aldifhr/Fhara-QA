@@ -5,6 +5,9 @@ export const REVIEW_FIX_INTRO = "The reviewer requested changes to the prepared 
 /** Intro of the QA loop's fix subtask. */
 export const QA_FIX_INTRO =
   "QA reported failures on the prepared work. A hydration warning is fixed at its real server/client mismatch, never by a mounted flag, a setState-in-effect render gate, or suppressHydrationWarning on wrappers; if it is not caused by this change, report it as pre-existing instead of editing around it.";
+/** Intro of the QA spec-healing subtask (locator/timeout failures only). */
+export const QA_HEAL_SPEC_INTRO =
+  "A generated Playwright spec failed because a locator could not resolve or timed out. Update ONLY the spec file using role/label-based locators. Do not change the assertion's expected behaviour and do not touch production code. If the app behaviour is actually wrong, report it as a product finding instead of editing the test.";
 /** Intro of the verification loop's fix subtask. */
 export const VERIFY_FIX_INTRO =
   "Static verification reported failures. For a typecheck error on a library API, base the fix on the library's installed type definitions (node_modules/<pkg>/package.json \"types\", node_modules/<pkg>/dist/*.d.ts), never on guessed props.";

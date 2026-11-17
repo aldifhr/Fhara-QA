@@ -430,9 +430,9 @@ export function optionsToolAvailable(input: Pick<SubtaskExecutionInput, "showOpt
   return Boolean(input.showOptions) && permissionsForAgent(input.agent).options === true;
 }
 
-/** design_lookup goes with the Designer (and any agent with the ui-ux-design capability). */
-function designLookupAvailable(agent: SubtaskExecutionInput["agent"]): boolean {
-  return resolveRoleKey(agent.role ?? "") === "frontend" || (agent.capabilities ?? []).includes("ui-ux-design");
+/** No design role in this fork; design_lookup is never available. */
+function designLookupAvailable(_agent: SubtaskExecutionInput["agent"]): boolean {
+  return false;
 }
 
 /**

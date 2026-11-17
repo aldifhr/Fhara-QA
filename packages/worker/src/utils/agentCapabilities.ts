@@ -6,47 +6,18 @@ import { CAPABILITY, type AgentDefinition } from "@/types";
  * role-name heuristic). No routing or availability logic: that stays in
  * orchestrator/capabilities, which re-exports these.
  *
- * Role patterns take their capabilities from the shared role registry
- * (apps/api/convex/lib/roles.ts `registryCapabilities`); the non-role
- * patterns (security, github, shell) are worker-only heuristics.
+ * This fork has one agent. Every legacy role name resolves to the same
+ * capability set through `LEGACY_ROLE_SUCCESSORS`; the extra patterns below
+ * are worker-only heuristics for free-text agent names.
  */
-
 const ROLE_CAPABILITIES: Array<{ pattern: RegExp; capabilities: string[] }> = [
   {
-    pattern: /\b(cto|architect|architecture|tech lead|principal)\b/i,
-    capabilities: [...ROLES.cto.registryCapabilities],
-  },
-  {
-    pattern: /\b(designer|design|wireframe|ui-ux|figma)\b/i,
-    capabilities: [...ROLES.designer.registryCapabilities],
-  },
-  {
-    pattern: /\b(frontend|front-end|ui|ux|react|web)\b/i,
-    capabilities: [...ROLES.frontend.registryCapabilities],
-  },
-  {
-    pattern: /\b(backend|back-end|api|server|database|db|python|django|fastapi|golang|java|kotlin|rust|ruby|php|laravel|dotnet|node|postgres|mysql)\b/i,
-    capabilities: [...ROLES.backend.registryCapabilities],
-  },
-  {
-    pattern: /\b(qa|test|testing|quality|e2e)\b/i,
+    pattern: /\b(qa|test|testing|quality|e2e|cto|architect|designer|frontend|backend|support|researcher|reviewer)\b/i,
     capabilities: [...ROLES.qa.registryCapabilities],
-  },
-  {
-    pattern: /\b(reviewer|code-?review)\b/i,
-    capabilities: [...ROLES.qa.registryCapabilities],
-  },
-  {
-    pattern: /\b(support|documentation|docs|technical-writer|writer)\b/i,
-    capabilities: [...ROLES.cto.registryCapabilities],
   },
   {
     pattern: /\b(security|audit|pentest|appsec)\b/i,
     capabilities: [CAPABILITY.SECURITY],
-  },
-  {
-    pattern: /\b(research|analyst|investigator)\b/i,
-    capabilities: [...ROLES.cto.registryCapabilities],
   },
   {
     pattern: /\b(github|git|pr|pull request|issue|repo)\b/i,

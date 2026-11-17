@@ -32,8 +32,8 @@
   ],
   "messages": [
     "system: Planned 1 subtask",
-    "system: Sent to Frontend: impl",
-    "system: Consulted Backend",
+    "system: Sent to Assistant: impl",
+    "system: Consulted Assistant",
     "-: Done.\n\nVerification: passed."
   ],
   "delegations": [],

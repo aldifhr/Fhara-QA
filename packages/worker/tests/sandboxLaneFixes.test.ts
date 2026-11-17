@@ -254,7 +254,7 @@ describe("7 OpenCode writes are recorded even when the run fails", () => {
       return { stdout: "", stderr: "killed", code: 1 };
     };
     const saved: string[] = [];
-    const agent: AgentDefinition = { _id: "a1", name: "FE", role: "frontend", executionRuntime: "opencode" };
+    const agent: AgentDefinition = { _id: "a1", name: "Writer", role: "custom-fe", supportedTools: ["read_file", "write_file", "run_command"], executionRuntime: "opencode" };
     const input: SubtaskExecutionInput = {
       workspacePath: ws,
       command: "Create simple.html",

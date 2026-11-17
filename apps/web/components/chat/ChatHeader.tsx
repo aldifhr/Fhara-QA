@@ -126,8 +126,7 @@ export default function ChatHeader({
 
   const tabs = (
     <div role="tablist" aria-label="Workspace view" className="flex items-center rounded-xl bg-hover p-1">
-      {(["chat", "tasks", "files"] as const).map((t) => (
-        <button
+      {(["chat", "files"] as const).map((t) => (        <button
           key={t}
           type="button"
           role="tab"
@@ -138,7 +137,6 @@ export default function ChatHeader({
           }`}
         >
           {t}
-          {t === "tasks" && openTaskCount > 0 && <span className="ml-1.5 tabular-nums text-ink-3">{openTaskCount}</span>}
         </button>
       ))}
     </div>

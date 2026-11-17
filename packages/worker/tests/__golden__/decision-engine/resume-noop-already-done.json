@@ -30,7 +30,7 @@
     }
   ],
   "messages": [
-    "system: Sent to Frontend: implement",
+    "system: Sent to Assistant: implement",
     "-: No change needed: a.txt already has the requested content, so nothing was staged or applied."
   ],
   "delegations": [],

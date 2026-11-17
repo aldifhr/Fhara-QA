@@ -1,20 +1,10 @@
 import * as Schema from "effect/Schema";
 
 /**
- * Display summary of the fixed agent roles (no prompts). The server registry in
- * `apps/server/src/roles/registry.ts` is the source; a server test keeps the two equal.
+ * Display summary of the fixed agent roles (no prompts). This fork has one
+ * agent: CTO, Frontend, Backend and Designer are retired (plan 068).
  */
-export const AGENT_ROLE_IDS = [
-  "cto",
-  "designer",
-  "frontend",
-  "backend",
-  "qa",
-  "reviewer",
-  "devops",
-  "researcher",
-  "support",
-] as const;
+export const AGENT_ROLE_IDS = ["qa"] as const;
 export type AgentRoleId = (typeof AGENT_ROLE_IDS)[number];
 
 /** Wire schema for the fixed role ids. */
@@ -38,73 +28,10 @@ export interface AgentRoleSummary {
 
 export const AGENT_ROLE_SUMMARIES = [
   {
-    id: "cto",
-    displayName: "CTO",
-    description: "Plans the work, makes architecture decisions and splits tasks across roles.",
-    readOnly: true,
-    writeScope: [],
-  },
-  {
-    id: "designer",
-    displayName: "UI/UX Designer",
-    description: "Designs user flows, layouts, UI copy and accessibility.",
-    readOnly: true,
-    writeScope: [],
-  },
-  {
-    id: "frontend",
-    displayName: "Frontend",
-    description: "Builds UI screens and components in the web app and shared UI package.",
-    readOnly: false,
-    writeScope: ["apps/web/**", "packages/ui/**"],
-  },
-  {
-    id: "backend",
-    displayName: "Backend",
-    description: "Builds server logic, APIs, contracts, persistence and shared packages.",
-    readOnly: false,
-    writeScope: ["apps/server/**", "packages/**", "!packages/ui/**"],
-  },
-  {
     id: "qa",
-    displayName: "QA",
-    description: "Writes and runs tests, reproduces bugs and reports quality issues.",
+    displayName: "Assistant",
+    description: "Runs the QA automation pipeline: test plans, generated specs, execution and healing.",
     readOnly: false,
-    writeScope: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "e2e/**"],
-  },
-  {
-    id: "reviewer",
-    displayName: "Reviewer",
-    description: "Reviews diffs for correctness, scope, security and test coverage.",
-    readOnly: true,
-    writeScope: [],
-  },
-  {
-    id: "devops",
-    displayName: "DevOps",
-    description: "Owns CI, build tooling, scripts, containers and deployment config.",
-    readOnly: false,
-    writeScope: [
-      ".github/**",
-      "scripts/**",
-      "Dockerfile*",
-      "*.config.*",
-      "turbo.json",
-      "package.json",
-    ],
-  },
-  {
-    id: "researcher",
-    displayName: "Researcher",
-    description: "Investigates libraries, APIs and prior art and summarizes options with sources.",
-    readOnly: true,
-    writeScope: [],
-  },
-  {
-    id: "support",
-    displayName: "Support",
-    description: "Answers questions and maintains docs; the default when no other role fits.",
-    readOnly: false,
-    writeScope: ["**/*.md", "docs/**"],
+    writeScope: ["tests/**", "e2e/**", "**/*.test.*", "**/*.spec.*", "**/__tests__/**", "playwright.config.*"],
   },
 ] as const satisfies ReadonlyArray<AgentRoleSummary>;

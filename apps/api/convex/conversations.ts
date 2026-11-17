@@ -316,6 +316,31 @@ export const listByProject = query({
   },
 });
 
+/**
+ * Threads-first fork (plan 068): a project owns many conversations. Each one
+ * is a QA thread; sending a message in it stays in that thread.
+ */
+export const createThread = mutation({
+  args: { projectId: v.id("projects"), title: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<Id<"conversations">> => {
+    await assertProjectAccess(ctx, args.projectId);
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("Project not found");
+    const now = Date.now();
+    const title = args.title?.trim().slice(0, 200);
+    const id = await ctx.db.insert("conversations", {
+      projectId: args.projectId,
+      kind: "project",
+      status: "active",
+      createdAt: now,
+      lastMessageAt: now,
+      ...(title ? { title } : {}),
+    });
+    await syncConversationThread(ctx, id, { seen: true });
+    return id;
+  },
+});
+
 export const setParticipants = mutation({
   args: {
     conversationId: v.id("conversations"),

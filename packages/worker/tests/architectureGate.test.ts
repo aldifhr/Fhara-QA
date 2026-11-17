@@ -82,7 +82,7 @@ describe("O1: neutral planner prompt and call", () => {
     expect(prompt).not.toMatch(/You are the CTO/i);
     expect(prompt).not.toMatch(/CTO must (verify|reject)/i);
     expect(prompt).not.toMatch(/CTO quality gate/i);
-    expect(prompt.startsWith("You plan work for a team of specialist roles in Fhara. You do not do the work.")).toBe(true);
+    expect(prompt.startsWith("You plan QA automation work for a single assistant. You do not do the work yourself.")).toBe(true);
     expect(prompt).toContain('"architecture":{"needed":false');
   });
 
@@ -129,7 +129,7 @@ describe("O1: a flagged plan inserts the CTO decision node before the gated work
     const decision = result.plan.subtasks.find((s) => s.key === ARCH_DECISION_KEY)!;
     expect(decision).toMatchObject({ kind: "analysis", capability: "architecture", dependencies: ["research"] });
     expect(decision.title).toBe("Architecture decision: Model order status as a state machine?");
-    expect(decision.description).toMatch(/Decision: go/);
+    expect(decision.description).toMatch(/No architecture stage exists in this fork/);
     expect(result.plan.subtasks.find((s) => s.key === "backend")!.dependencies).toEqual([ARCH_DECISION_KEY]);
     // Downstream of a gated node waits transitively; it is not re-gated.
     expect(result.plan.subtasks.find((s) => s.key === "frontend")!.dependencies).toEqual(["backend"]);
@@ -228,7 +228,7 @@ describe("O1: planner through the mock LLM", () => {
         {
           id: "planner-arch",
           role: "planner",
-          match: ["You plan work for a team of specialist roles"],
+          match: ["You plan QA automation work for a single assistant"],
           reply: llmPlan(
             [node("implement", { capability: "backend-development", allowedPaths: ["apps/api/convex/schema.ts", "apps/api/convex/orders.ts"] })],
             { needed: true, reasons: ["schema_change"], question: "Order status model", gatedKeys: ["implement"] }

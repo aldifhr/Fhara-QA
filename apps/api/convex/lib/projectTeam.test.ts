@@ -16,7 +16,7 @@ describe("effectiveTeamIds", () => {
       agent("lead", "lead", 1),
       agent("custom", "data-scientist", 1),
     ];
-    expect(effectiveTeamIds(undefined, all)).toEqual(["cto", "qa"]);
-    expect(effectiveTeamIds([], all)).toEqual(["cto", "qa"]);
+    expect(effectiveTeamIds(undefined, all)).toEqual(["qa"]);
+    expect(effectiveTeamIds([], all)).toEqual(["qa"]);
   });
 });

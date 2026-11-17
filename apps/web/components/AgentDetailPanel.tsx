@@ -94,7 +94,7 @@ function AgentDetail({ agent, onClose, onRemove, status: teamStatus }: PanelProp
   ];
   // Backend returns [] (not null) when an agent has no explicit caps and
   // no synced roleDefinition row, so an empty array must fall through to
-  // the role defaults just like a missing value does.
+  // the defaults just like a missing value does.
   const capabilities: string[] =
     (detail as any)?.effectiveCapabilities?.length
       ? (detail as any).effectiveCapabilities

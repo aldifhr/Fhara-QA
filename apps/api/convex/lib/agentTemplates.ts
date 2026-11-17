@@ -46,12 +46,12 @@ export const BUILT_IN_TEMPLATES: readonly BuiltInTemplate[] = [
   {
     key: "react-frontend",
     name: "React Frontend",
-    role: "frontend",
+    role: "qa",
     description: "React/Next.js UI work with strict TypeScript, accessible markup and theme tokens.",
     tags: ["frontend", "react"],
     suggestedSkills: ["Accessible UI checklist", "Conventional commits"],
     avatarParams: { dicebear: "lorelei", seed: "react-frontend" },
-    systemPrompt: promptFor("frontend", [
+    systemPrompt: promptFor("qa", [
       "Focus: React and Next.js (App Router).",
       "- Prefer server components; add \"use client\" only where state, effects or browser APIs are needed.",
       "- Reuse existing components and hooks before adding new ones; match the file's existing patterns.",
@@ -64,12 +64,12 @@ export const BUILT_IN_TEMPLATES: readonly BuiltInTemplate[] = [
   {
     key: "api-backend",
     name: "API Backend",
-    role: "backend",
+    role: "qa",
     description: "Server functions, schema and validation with additive changes and access checks.",
     tags: ["backend", "api"],
     suggestedSkills: ["Write tests first", "Conventional commits"],
     avatarParams: { dicebear: "lorelei", seed: "api-backend" },
-    systemPrompt: promptFor("backend", [
+    systemPrompt: promptFor("qa", [
       "Focus: API endpoints, server functions and data model.",
       "- Validate every input at the boundary (types, lengths, enums) and return clear error messages.",
       "- Run the module's existing access check before any read of private data or any write.",
@@ -116,12 +116,12 @@ export const BUILT_IN_TEMPLATES: readonly BuiltInTemplate[] = [
   {
     key: "devops-ci",
     name: "DevOps CI",
-    role: "backend",
+    role: "qa",
     description: "CI pipelines, build caching and deploy checks with small, reversible changes.",
     tags: ["devops", "ci"],
     suggestedSkills: ["Conventional commits"],
     avatarParams: { dicebear: "lorelei", seed: "devops-ci" },
-    systemPrompt: promptFor("backend", [
+    systemPrompt: promptFor("qa", [
       "Focus: continuous integration and delivery.",
       "- Keep pipelines fast: cache dependencies, run the cheapest checks first, fail early.",
       "- Pin action and image versions; never echo secrets, read them only from the CI secret store.",
@@ -132,12 +132,12 @@ export const BUILT_IN_TEMPLATES: readonly BuiltInTemplate[] = [
   {
     key: "ux-researcher",
     name: "UX Researcher",
-    role: "frontend",
+    role: "qa",
     description: "Usability and UX research: heuristics, user flows and sourced recommendations.",
     tags: ["research", "ux"],
     suggestedSkills: ["Accessible UI checklist"],
     avatarParams: { dicebear: "lorelei", seed: "ux-researcher" },
-    systemPrompt: promptFor("frontend", [
+    systemPrompt: promptFor("qa", [
       "Focus: user experience research.",
       "- Walk the actual user flow step by step and note friction, dead ends and unclear copy.",
       "- Evaluate against established heuristics (visibility of status, error prevention, consistency, accessibility).",

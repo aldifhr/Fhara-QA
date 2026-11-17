@@ -90,8 +90,7 @@ export function buildRoutingHint(input: {
   text?: string;
   hard?: boolean;
 }): RoutingHint {
-  // The CTO plans and approves architecture; it never owns the work, so it is never a hint's role.
-  const role = hintRole(input.role) === "cto" ? undefined : hintRole(input.role);
+  const role = hintRole(input.role);
   const files = input.text ? hintFiles(input.text) : [];
   const brief = input.brief?.trim().slice(0, MAX_BRIEF);
   const topic = input.topic?.trim().slice(0, MAX_TOPIC);

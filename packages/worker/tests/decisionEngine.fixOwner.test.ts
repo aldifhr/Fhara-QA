@@ -3,7 +3,9 @@
  * `fix_needed`. Every branch: exhausted, unowned, QA's UI preference, the
  * writer pin, per-stage fix nodes (key, title, scope, order). The loops'
  * event sequences are pinned by tests/decisionEngine.golden.test.ts
- * (fix-* scenarios).
+ * (fix-* scenarios). The roster is QA-only (plan 068); production-code
+ * writers are custom agents that declare write_file, as in the earlier
+ * multi-role fork.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -18,20 +20,45 @@ import { ROLES } from "@/api/convex/lib/roles";
 import type { AgentDefinition, PlanSubtask } from "@/types";
 import type { ReviewFinding } from "@/utils/json";
 
-function fixed(role: keyof typeof ROLES, id: string = role): AgentDefinition {
-  return {
-    _id: id,
-    name: ROLES[role].label,
-    role,
-    capabilities: [...ROLES[role].capabilities],
-    supportedTools: [...ROLES[role].defaultTools],
-    priority: ROLES[role].priority,
-    isEnabled: true,
-  };
-}
+const QA: AgentDefinition = {
+  _id: "qa",
+  name: ROLES.qa.label,
+  role: "qa",
+  capabilities: [...ROLES.qa.capabilities],
+  supportedTools: [...ROLES.qa.defaultTools],
+  priority: ROLES.qa.priority,
+  isEnabled: true,
+};
+const UI: AgentDefinition = {
+  _id: "ui",
+  name: "UI Writer",
+  role: "custom-ui",
+  capabilities: ["frontend-development"],
+  supportedTools: ["read_file", "write_file"],
+  priority: 5,
+  isEnabled: true,
+};
+const API: AgentDefinition = {
+  _id: "api",
+  name: "API Writer",
+  role: "custom-api",
+  capabilities: ["backend-development"],
+  supportedTools: ["read_file", "write_file"],
+  priority: 4,
+  isEnabled: true,
+};
+const READ_ONLY_UI: AgentDefinition = {
+  _id: "readonly-ui",
+  name: "ReadOnly UI",
+  role: "custom-readonly-ui",
+  capabilities: ["frontend-development"],
+  supportedTools: ["read_file"],
+  priority: 1,
+  isEnabled: true,
+};
 
-const team = (["frontend", "backend", "qa", "cto"] as const).map((role) => fixed(role));
-const byRole = (role: string) => team.find((agent) => agent.role === role)!;
+const team = [QA, UI, API];
+const byRole = (role: string) => team.find((agent) => agent.role === role || agent._id === role)!;
 
 const sub = (key: string, capability: string, order: number, extra: Partial<PlanSubtask> = {}): PlanSubtask => ({
   key,
@@ -44,8 +71,8 @@ const sub = (key: string, capability: string, order: number, extra: Partial<Plan
   ...extra,
 });
 
-const UI = sub("ui", "frontend-development", 0, { allowedPaths: ["web/"] });
-const API = sub("api", "backend-development", 3, { allowedPaths: ["api/"] });
+const UI_NODE = sub("ui", "frontend-development", 0, { allowedPaths: ["web/"] });
+const API_NODE = sub("api", "backend-development", 3, { allowedPaths: ["api/"] });
 const REVIEW = sub("review", "code-review", 4, { kind: "review" });
 const finding = (filePath: string): ReviewFinding => ({ severity: "high", filePath, description: `bad ${filePath}`, suggestion: "fix it" });
 
@@ -54,7 +81,7 @@ const facts = (over: Partial<FixNeededFacts> = {}): FixNeededFacts => ({
   round: 0,
   maxRounds: 1,
   findings: [finding("api/server.ts")],
-  nodes: [UI, API, REVIEW],
+  nodes: [UI_NODE, API_NODE, REVIEW],
   writerByKey: new Map(),
   agents: team,
   ...over,
@@ -90,8 +117,8 @@ describe("decideFixOwner: when the loop stops", () => {
     expect(decide({ nodes: [REVIEW] })).toEqual({ kind: "block", reason: "unowned" });
   });
 
-  it("blocks as unowned when the only owner is a role that may not write", () => {
-    expect(decide({ nodes: [UI], agents: [byRole("qa"), byRole("qa")] })).toEqual({ kind: "block", reason: "unowned" });
+  it("blocks as unowned when the only owner may not write", () => {
+    expect(decide({ nodes: [UI_NODE], agents: [READ_ONLY_UI] })).toEqual({ kind: "block", reason: "unowned" });
   });
 });
 
@@ -101,20 +128,20 @@ describe("decideFixOwner: who fixes", () => {
     expect(out.kind).toBe("spawn_fix");
     if (out.kind !== "spawn_fix") return;
     expect(out.ownerNodeKey).toBe("api");
-    expect(out.agent.role).toBe("backend");
+    expect(out.agent._id).toBe("api");
     expect(out.ownerAgentId).toBe(out.agent._id);
   });
 
   it("the agent that wrote the owner node wins over capability routing", () => {
-    const writer = { ...byRole("backend"), _id: "backend-2", name: "Backend 2" };
+    const writer = { ...byRole("api"), _id: "api-2", name: "API Writer 2" };
     const out = decide({ agents: [...team, writer], writerByKey: new Map([["api", writer]]) });
-    expect(out.kind === "spawn_fix" && out.ownerAgentId).toBe("backend-2");
+    expect(out.kind === "spawn_fix" && out.ownerAgentId).toBe("api-2");
   });
 
   it("a writer no longer on the roster falls back to capability routing", () => {
-    const gone = { ...byRole("backend"), _id: "gone" };
+    const gone = { ...byRole("api"), _id: "gone" };
     const out = decide({ writerByKey: new Map([["api", gone]]) });
-    expect(out.kind === "spawn_fix" && out.ownerAgentId).toBe(byRole("backend")._id);
+    expect(out.kind === "spawn_fix" && out.ownerAgentId).toBe("api");
   });
 
   it("no finding path: the last code_change owns it", () => {
@@ -125,11 +152,11 @@ describe("decideFixOwner: who fixes", () => {
   it("qa: a UI implementer owns the fix even when the path points elsewhere", () => {
     const out = decide({ stage: "qa", findings: [finding("api/server.ts")] });
     expect(out.kind === "spawn_fix" && out.ownerNodeKey).toBe("ui");
-    expect(out.kind === "spawn_fix" && out.agent.role).toBe("frontend");
+    expect(out.kind === "spawn_fix" && out.agent._id).toBe("ui");
   });
 
   it("qa without a UI node falls back to the shared rule", () => {
-    const out = decide({ stage: "qa", nodes: [API, REVIEW] });
+    const out = decide({ stage: "qa", nodes: [API_NODE, REVIEW] });
     expect(out.kind === "spawn_fix" && out.ownerNodeKey).toBe("api");
   });
 
@@ -155,7 +182,7 @@ describe("decideFixOwner: the fix node", () => {
     if (out.kind !== "spawn_fix") throw new Error("expected spawn_fix");
     const [fix] = out.nodes;
     expect(fix).toMatchObject({ key: "fix_qa_2_2", title: "Address QA failures (iteration 2)", capability: "frontend-development", allowedPaths: ["web/"] });
-    expect(fix.allowedPaths).not.toBe(UI.allowedPaths);
+    expect(fix.allowedPaths).not.toBe(UI_NODE.allowedPaths);
   });
 
   it("qa: an owner without paths gives an unscoped fix", () => {
@@ -188,8 +215,8 @@ describe("moved helpers keep their behaviour", () => {
   });
 
   it("pickQaFixOwner prefers UI nodes, else the shared rule", () => {
-    expect(pickQaFixOwner([UI, API], [{ filePath: "api/x.ts" }])?.key).toBe("ui");
-    expect(pickQaFixOwner([API], [{ filePath: "api/x.ts" }])?.key).toBe("api");
+    expect(pickQaFixOwner([UI_NODE, API_NODE], [{ filePath: "api/x.ts" }])?.key).toBe("ui");
+    expect(pickQaFixOwner([API_NODE], [{ filePath: "api/x.ts" }])?.key).toBe("api");
     expect(pickQaFixOwner([REVIEW], [])).toBeUndefined();
   });
 });

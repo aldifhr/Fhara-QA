@@ -1,14 +1,14 @@
 /**
  * GOAT G1: every code-writing prompt (code_change, native provider) carries
- * the shared completion contract, and the
- * Frontend and Backend roles get the fhara-discipline skill.
+ * the shared completion contract, and the QA role (the sole code-writing
+ * role in this fork, for test specs) gets the fhara-discipline skill.
  */
 import { describe, expect, test } from "vitest";
 import { COMPLETION_CONTRACT, COMPLETION_CONTRACT_LINES, buildNativePrompt, codeChangePrompt } from "@/prompts";
 import { AGENT_SEED_PROMPTS } from "@/api/convex/lib/prompts/agents";
 import { builtinSkillKeysForRole } from "@/api/convex/lib/builtinSkills";
 
-const CODE_ROLES = ["frontend", "backend"] as const;
+const CODE_ROLES = ["qa"] as const;
 
 describe("completion contract", () => {
   test("stays compact", () => {

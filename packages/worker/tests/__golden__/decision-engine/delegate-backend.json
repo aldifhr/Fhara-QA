@@ -59,9 +59,9 @@
   ],
   "messages": [
     "system: Planned 1 subtask",
-    "system: Sent to Frontend: ui",
+    "system: Sent to Assistant: ui",
     "decision_delegate_0: @Backend The API endpoint is missing",
-    "system: Sent to Backend: Delegated work",
+    "system: Sent to Assistant: Delegated work",
     "-: Done.\n\nVerification: passed."
   ],
   "delegations": [

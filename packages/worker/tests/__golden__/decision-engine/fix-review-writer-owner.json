@@ -115,11 +115,11 @@
   ],
   "messages": [
     "system: Planned 3 subtasks",
-    "system: Sent to Backend: api",
-    "system: Sent to Frontend: ui",
-    "system: Sent to QA: review",
-    "system: Sent to Backend: Address review findings (iteration 1)",
-    "system: Sent to QA: review",
+    "system: Sent to Assistant: api",
+    "system: Sent to Assistant: ui",
+    "system: Sent to Assistant: review",
+    "system: Sent to Assistant: Address review findings (iteration 1)",
+    "system: Sent to Assistant: review",
     "-: Done.\n\nReview: approved (2 files reviewed, no blocking findings).\n\nVerification: passed."
   ],
   "delegations": [],

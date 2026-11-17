@@ -66,7 +66,7 @@ export default function WorkloadSection() {
             <table className="w-full min-w-[640px] text-[13px]">
               <thead className="border-b border-line text-[12px] text-ink-3">
                 <tr>
-                  <th className="px-3 py-2 text-left font-normal">Role</th>
+                  <th className="px-3 py-2 text-left font-normal">Assistant</th>
                   <th className={th}>Subtasks</th>
                   <th className={th}>Done / Failed</th>
                   <th className={th}>Tokens</th>
@@ -86,7 +86,7 @@ export default function WorkloadSection() {
                       <td className="px-3 py-2 text-left">
                         <span className={idle ? "" : "font-medium"}>{r.label}</span>
                         {!r.recognized && r.key !== "unattributed" && (
-                          <span className="text-ink-3" title="Stored role is not one of the nine fixed roles">
+                          <span className="text-ink-3" title="Stored type is not recognized">
                             {" "}
                             · custom role
                           </span>
@@ -144,7 +144,7 @@ export default function WorkloadSection() {
               </li>
             )}
             {data.totals.unassignedSubtasks > 0 && (
-              <li>{data.totals.unassignedSubtasks} subtask(s) were never assigned and are not counted per role.</li>
+              <li>{data.totals.unassignedSubtasks} subtask(s) were never assigned and are not counted per assistant.</li>
             )}
             {data.loadAware.count > 0 && (
               <li>

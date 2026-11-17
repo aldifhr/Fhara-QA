@@ -31,7 +31,7 @@ describe("scope guard in the implementer (one corrective retry)", () => {
       command: "tambahkan komentar JSDoc pada fungsi formatRupiah di src/lib/format.js",
       plan: { version: 1, goal: "g", strategy: "single", requiresApproval: false, maxConcurrency: 1, subtasks: [] },
       subtask: { key: "doc", title: "doc", description: "Add JSDoc to formatRupiah", kind: "code_change", capability: "backend-development", dependencies: [], order: 0 },
-      agent: { _id: "a", name: "Backend", role: "backend", capabilities: ["backend-development"] },
+      agent: { _id: "a", name: "Writer", role: "custom-writer", capabilities: ["backend-development"], supportedTools: ["read_file", "write_file", "run_command"] },
       llmHandles: [handle],
       priorOutputs: new Map(),
       fileChanges: [],
