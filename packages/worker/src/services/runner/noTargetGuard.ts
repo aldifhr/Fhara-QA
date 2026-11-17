@@ -1,0 +1,46 @@
+import { requestText } from "@/orchestrator/classifier";
+import { scopeViolations, scopeWarning, type ScopeChange } from "@/execution/scopeGuard";
+import { stagedSyntaxErrors, syntaxWarning } from "@/execution/editGuards";
+
+/** A fix / bug / investigation request (EN/ID). */
+const FIX_REQUEST =
+  /\b(?:fix|fixes|fixing|bugs?|bugfix|debug\w*|broken|perbaiki\w*|benerin|betulin|bug-?nya|masalah|kesalahan|error|errors|issues?|investigat\w*|investigasi)\b/i;
+
+/**
+ * No-target guard: a fix request whose prepared changes only CREATE files
+ * and modify none. That usually means the agent built the feature the bug
+ * was supposed to be in (live sandbox run: "search bug" in an app with no
+ * search → src/app/search/page.tsx + src/components/search-form.tsx).
+ * Returns the warning for the approval summary, or null.
+ */
+export function newFilesOnlyFixWarning(
+  command: string,
+  changes: ReadonlyArray<ScopeChange>
+): string | null {
+  // The apply approval's `warning` (and summary) also carries the scope
+  // guard's findings (execution/scopeGuard): deleted tests, removed
+  // exports, code edits on a doc-only request. Kept under this name so the
+  // apply stage's single warning call picks them up.
+  // R3: staged files that no longer parse (any executor path, including
+  // native agents that write files themselves) are flagged too.
+  const parts = [
+    noTargetWarning(command, changes),
+    scopeWarning(scopeViolations(command ?? "", changes)),
+    syntaxWarning(stagedSyntaxErrors(changes)),
+  ].filter(
+    (part): part is string => Boolean(part)
+  );
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function noTargetWarning(
+  command: string,
+  changes: ReadonlyArray<{ filePath: string; changeType: string }>
+): string | null {
+  if (changes.length === 0 || !FIX_REQUEST.test(requestText(command ?? ""))) return null;
+  if (!changes.every((change) => change.changeType === "new")) return null;
+  const files = changes.map((change) => change.filePath);
+  return `Check before approving: this is a fix request, but every change creates a new file (${files.slice(0, 5).join(", ")}${
+    files.length > 5 ? ", …" : ""
+  }) and none edits existing code. The feature or bug it refers to may not exist in the repository.`;
+}

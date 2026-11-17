@@ -1,0 +1,132 @@
+"use client";
+
+import Link from "next/link";
+import { ArrowLeft, ArrowUpRight, Minimize2 } from "lucide-react";
+import { InspectorHeader } from "@/components/ui/inspector";
+import { StatusTag } from "@/components/ui/status-tag";
+import { EditableTitle } from "./ThreadRename";
+import PauseResumeButton from "./PauseResumeButton";
+import TaskStopButton from "./TaskStopButton";
+import { taskStatusLabel } from "@/lib/taskStatus";
+import { taskStatusTone } from "@/lib/taskStatusTone";
+import { dueDateLabel, isOverdue } from "@/lib/runFormat";
+import { isWidePanel, toggledPanelWidth } from "@/lib/useResizablePanel";
+import { PERMISSION_MODE_LABELS, normalizePermissionMode } from "@/api/convex/lib/permissionModes";
+
+const HEADER_BUTTON =
+  "flex h-8 w-8 shrink-0 items-center justify-center rounded-field text-ink-3 outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30";
+
+/** The thread's status label (the tone comes from taskStatusTone). */
+function statusLabel(status: string, needsYou: boolean): string {
+  if (needsYou && !["done", "failed", "rejected", "cancelled"].includes(status)) return "Needs you";
+  if (status === "running") return "In progress";
+  if (status === "paused") return "Paused";
+  if (status === "done") return "Done";
+  return taskStatusLabel(status);
+}
+
+/**
+ * Task thread header on the Inspector shell (dashboard F7, split out of
+ * TaskThreadPanel): editable title, a meta line (project, permission mode,
+ * trace link), the status as a StatusTag, Pause/Resume + Stop while the task
+ * runs, widen/narrow and close on desktop, Back on the phone sheet.
+ * `task` undefined is loading, null is gone.
+ */
+export default function TaskThreadHeader({
+  task,
+  projectName,
+  needsYou = false,
+  fullScreen,
+  width,
+  onWidthChange,
+  onClose,
+}: {
+  task: any;
+  projectName?: string;
+  needsYou?: boolean;
+  fullScreen: boolean;
+  width: number;
+  onWidthChange: (width: number) => void;
+  onClose: () => void;
+}) {
+  const back = fullScreen ? (
+    <button type="button" onClick={onClose} aria-label="Back to chat" className={`-ml-1 ${HEADER_BUTTON}`}>
+      <ArrowLeft size={18} />
+    </button>
+  ) : undefined;
+  const wide = isWidePanel(width);
+  const widen = fullScreen ? null : (
+    <button
+      type="button"
+      onClick={() => onWidthChange(toggledPanelWidth(width))}
+      title={wide ? "Narrow the thread" : "Widen the thread"}
+      aria-label={wide ? "Narrow the thread" : "Widen the thread"}
+      className={HEADER_BUTTON}
+    >
+      {wide ? <Minimize2 size={15} /> : <ArrowUpRight size={16} />}
+    </button>
+  );
+  const close = fullScreen ? undefined : onClose;
+
+  if (!task) {
+    return (
+      <InspectorHeader
+        divider
+        icon={back}
+        title={task === null ? "Task not found" : "Loading task…"}
+        actions={widen}
+        onClose={close}
+        closeLabel="Close task thread"
+      />
+    );
+  }
+
+  const status = task.status as string;
+  const running = status === "running" || status === "queued" || status === "paused";
+  return (
+    <InspectorHeader
+      icon={back}
+      title={<EditableTitle title={task.title} renameRef={{ taskId: String(task._id) }} label="task" />}
+      subtitle={
+        <>
+          Task thread · {projectName ?? "Workspace"}
+          {" · "}
+          <span title="Permission mode">{PERMISSION_MODE_LABELS[normalizePermissionMode(task.permissionMode)]}</span>
+          {/* Plan 063: the deadline the request stated; warn-toned once it passes. */}
+          {typeof task.dueAt === "number" && (
+            <>
+              {" · "}
+              <span
+                className={isOverdue(task.dueAt, !running) ? "text-danger" : undefined}
+                title="Due date"
+              >
+                due {dueDateLabel(task.dueAt)}
+              </span>
+            </>
+          )}
+          {" · "}
+          <Link href={`/runs/${task._id}`} className="underline-offset-2 hover:text-ink hover:underline">
+            View trace
+          </Link>
+        </>
+      }
+      status={<StatusTag tone={taskStatusTone(status, needsYou)}>{statusLabel(status, needsYou)}</StatusTag>}
+      actions={
+        <>
+          {/* Plan 022: Pause / Resume beside Stop. Only Stop confirms. */}
+          {/* legacy direct threads (removed 2026-11-12) are read-only: no controls */}
+          {running && task.mode !== "direct" && (
+            <>
+              <PauseResumeButton task={{ _id: task._id, title: task.title, status }} size={15} />
+            </>
+          )}
+          {/* Stop confirms in its own ConfirmDialog (TaskStopButton). */}
+          <TaskStopButton task={task} />
+          {widen}
+        </>
+      }
+      onClose={close}
+      closeLabel="Close task thread"
+    />
+  );
+}

@@ -1,0 +1,423 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@source "../../../node_modules/streamdown/dist/*.js";
+@source "../../../node_modules/@streamdown/code/dist/*.js";
+@source "../../../node_modules/@streamdown/math/dist/*.js";
+@source "../../../node_modules/@streamdown/mermaid/dist/*.js";
+@source "../../../node_modules/@streamdown/cjk/dist/*.js";
+@source "../../api/convex/lib/roles.ts";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  /* Shell design tokens (workspace redesign). */
+  --color-canvas: var(--shell-canvas);
+  --color-panel: var(--shell-panel);
+  --color-panel-2: var(--shell-panel-2);
+  --color-hover: var(--shell-hover);
+  --color-bubble: var(--shell-bubble);
+  --color-line: var(--shell-line);
+  --color-line-strong: var(--shell-line-strong);
+  --color-ink: var(--shell-ink);
+  --color-ink-2: var(--shell-ink-2);
+  --color-ink-3: var(--shell-ink-3);
+  /* Plan 067: the purple accent is the primary action colour (mockup parity).
+     bg-brand = filled primary buttons; bg-brand-soft = tinted chip fills;
+     text-brand = accent text; text-brand-ink = text on a filled accent. */
+  --color-brand: var(--shell-brand);
+  --color-brand-hover: var(--shell-brand-hover);
+  --color-brand-soft: var(--shell-brand-soft);
+  --color-brand-ink: var(--shell-brand-ink);
+  --color-warn: var(--shell-warn);
+  --color-warn-soft: var(--shell-warn-soft);
+  /* Dashboard restyle (F1). */
+  --color-inset: var(--shell-inset);
+  --color-dot: var(--shell-dot);
+  --color-ok: var(--shell-ok);
+  --color-danger: var(--shell-danger);
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* Radius scale: field (inputs, buttons), card, panel (inspector, dialogs). */
+  --radius-field: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-panel: 1rem;
+  /* Layout widths: w-sidebar, w-sidebar-rail, w-inspector. */
+  --spacing-sidebar: 248px;
+  --spacing-sidebar-rail: 60px;
+  --spacing-inspector: 380px;
+  --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
+  --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
+  --animate-rainbow: rainbow var(--speed, 2s) infinite linear;
+}
+
+:root {
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --color-1: oklch(66.2% 0.225 25.9);
+  --color-2: oklch(60.4% 0.26 302);
+  --color-3: oklch(69.6% 0.165 251);
+  --color-4: oklch(80.2% 0.134 225);
+  --color-5: oklch(90.7% 0.231 133);
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Warm paper white instead of #fff: easier on the eyes, and bubbles and
+     borders read against it. */
+  --shell-canvas: #f1f0ec;
+  --shell-panel: #fafaf8;
+  --shell-panel-2: #f5f4f1;
+  --shell-hover: #efeee9;
+  --shell-line: #e6e4de;
+  --shell-line-strong: #d9d6cf;
+  --shell-bubble: #efeee9;
+  --shell-ink: #1d1d22;
+  --shell-ink-2: #6b6b76;
+  --shell-ink-3: #9b9ba6;
+  --shell-inset: #f3f2ee;
+  --shell-dot: #d9d6cf;
+  --shell-ok: #2f7d4f;
+  --shell-danger: #c2410c;
+  --shell-warn: #d9580b;
+  --shell-warn-soft: #fff1e6;
+  /* Accent (plan 067): the mockup's purple primary. */
+  --shell-brand: #6c5ce7;
+  --shell-brand-hover: #5b4bd1;
+  --shell-brand-soft: #efecfd;
+  --shell-brand-ink: #ffffff;
+  /* Diff viewer (plan 067): react-diff-viewer takes concrete colours through
+     inline styles, so its palette is tokens here instead of hexes in
+     components/DiffCard.tsx. Values are the light theme's original ones. */
+  --shell-diff-bg: #ffffff;
+  --shell-diff-fg: #374151;
+  --shell-diff-add-bg: #ecfdf5;
+  --shell-diff-del-bg: #fef2f2;
+  --shell-diff-word-add: #a7f3d0;
+  --shell-diff-word-del: #fecaca;
+  --shell-diff-add-fg: #065f46;
+  --shell-diff-del-fg: #991b1b;
+  --shell-diff-fold-gutter: #f9fafb;
+  --shell-diff-fold: #e5e7eb;
+  --shell-diff-empty: #f9fafb;
+  --shell-diff-gutter: #f9fafb;
+  --shell-diff-gutter-2: #f3f4f6;
+  --shell-diff-title-bg: #f9fafb;
+  --shell-diff-title-fg: #374151;
+  --shell-diff-title-line: #e5e7eb;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --color-1: oklch(66.2% 0.225 25.9);
+  --color-2: oklch(60.4% 0.26 302);
+  --color-3: oklch(69.6% 0.165 251);
+  --color-4: oklch(80.2% 0.134 225);
+  --color-5: oklch(90.7% 0.231 133);
+  --shell-canvas: #0b0b0d;
+  --shell-panel: #131316;
+  --shell-panel-2: #18181c;
+  --shell-hover: #1d1d22;
+  --shell-bubble: #1c1c21;
+  --shell-line: #24242a;
+  --shell-line-strong: #2e2e35;
+  --shell-ink: #ececf1;
+  --shell-ink-2: #9a9aa5;
+  --shell-ink-3: #6c6c77;
+  --shell-inset: #18181c;
+  --shell-dot: #2a2a31;
+  --shell-ok: #6cc08b;
+  --shell-danger: #f0845c;
+  --shell-warn: #f08a3c;
+  --shell-warn-soft: #2d1d12;
+  /* Accent (plan 067): lighter violet on dark, soft tint from the panel. */
+  --shell-brand: #7d6ef0;
+  --shell-brand-hover: #8d80f3;
+  --shell-brand-soft: #241f3d;
+  --shell-brand-ink: #0b0b0d;
+  /* Diff viewer (plan 067): the dark values of the same tokens. */
+  --shell-diff-bg: #111827;
+  --shell-diff-fg: #e5e7eb;
+  --shell-diff-add-bg: #064e3b;
+  --shell-diff-del-bg: #7f1d1d;
+  --shell-diff-word-add: #059669;
+  --shell-diff-word-del: #dc2626;
+  --shell-diff-add-fg: #a7f3d0;
+  --shell-diff-del-fg: #fecaca;
+  --shell-diff-fold-gutter: #1f2937;
+  --shell-diff-fold: #374151;
+  --shell-diff-empty: #1f2937;
+  --shell-diff-gutter: #1f2937;
+  --shell-diff-gutter-2: #111827;
+  --shell-diff-title-bg: #1f2937;
+  --shell-diff-title-fg: #e5e7eb;
+  --shell-diff-title-line: #374151;
+}
+
+html {
+  background: var(--shell-canvas);
+}
+
+body {
+  font-size: 15px;
+}
+
+html[data-font="geist"] {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html[data-font="inter"] {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html[data-font="system"] {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html[data-font="jetbrains"] {
+  --font-sans: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+}
+
+body {
+  background: transparent;
+  color: var(--shell-ink);
+}
+
+/* Dashboard restyle (F1) utilities. */
+/* Dotted-grid canvas for the main area. */
+@utility bg-dots {
+  background-color: var(--shell-canvas);
+  background-image: radial-gradient(var(--shell-dot) 1px, transparent 1px);
+  background-size: 16px 16px;
+  background-position: -8px -8px;
+}
+/* Small uppercase section label (sidebar groups, inspector fields). */
+@utility text-caption {
+  font-size: 10.5px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--shell-ink-3);
+}
+/* Ids, hashes, run numbers. */
+@utility text-mono-id {
+  font-family: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--shell-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+/* Status chip: hairline frame + soft tinted fill (plan 067, see ui/status-tag.tsx). */
+@utility status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.375rem;
+  padding-inline: 0.5rem;
+  /* A tone sets --status-tone; the frame is that colour at half strength. */
+  border: 1px solid color-mix(in oklab, var(--status-tone, var(--shell-ink-3)) 50%, transparent);
+  border-radius: 0.375rem;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--status-tone, var(--shell-ink-2));
+  /* Plan 067 (mockup parity): a soft tinted fill under the hairline frame. */
+  background: color-mix(in oklab, var(--status-tone, var(--shell-ink-3)) 10%, transparent);
+}
+
+/* Status as a hairline frame plus a soft tint (see ui/status-tag.tsx). */
+
+/* Thin, quiet scrollbars inside the shell panes. */
+.shell-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--shell-line-strong) transparent;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+
+@keyframes shell-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-1px); }
+}
+.shell-dots > i {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: shell-dot 1.2s infinite ease-in-out;
+}
+.shell-dots > i:nth-child(2) { animation-delay: 0.15s; }
+.shell-dots > i:nth-child(3) { animation-delay: 0.3s; }
+
+/* "Thinking" label: a light sweep so a waiting reply visibly moves. */
+.thinking-shimmer {
+  background: linear-gradient(90deg, currentColor 0%, currentColor 35%, var(--color-ink-3, #9ca3af) 50%, currentColor 65%, currentColor 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-sweep 1.6s linear infinite;
+}
+@keyframes thinking-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-shimmer { animation: none; -webkit-text-fill-color: currentColor; }
+}
+
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@keyframes shimmer-slide {
+  to {
+    transform: translate(calc(100vw - 100%), 0);
+  }
+}
+@keyframes spin-around {
+  0% {
+    transform: translateZ(0) rotate(0);
+  }
+  15%, 35% {
+    transform: translateZ(0) rotate(90deg);
+  }
+  65%, 85% {
+    transform: translateZ(0) rotate(270deg);
+  }
+  100% {
+    transform: translateZ(0) rotate(360deg);
+  }
+}
+@keyframes rainbow {
+  0% {
+    background-position: 0%;
+  }
+  100% {
+    background-position: 200%;
+  }
+}

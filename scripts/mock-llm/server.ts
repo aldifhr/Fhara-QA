@@ -1,0 +1,424 @@
+/**
+ * Mock LLM: an OpenAI-compatible stub so the worker (and the Convex chat
+ * actions) run end-to-end in seconds instead of minutes, with no provider
+ * quota. `npm run mock:llm` (docs/mock-fixtures.md).
+ *
+ *   POST /v1/chat/completions   scripted reply; `stream: true` → SSE replayed at 30 Hz × speed
+ *   GET  /v1/models             mock/default plus one model per scenario in the script
+ *   GET  /__mock/calls          the recent requests (role, rule, scenario) for tests
+ *   POST /__mock/reset          clear the call log, the per-rule counters and disabled rules
+ *   POST /__mock/disable?rule=  switch one rule off (…/enable to switch it back on)
+ *
+ * A rule may also inject a wire fault (`fault`, see MockFault): a dropped
+ * stream mid-chunk, a reset, a stall, a malformed SSE chunk, an early EOF,
+ * a context-overflow 400 or a 5xx (a burst with `times`). The call log
+ * names the fault each request got.
+ *
+ * Replies come from a JSON script (scripts/mock-llm/scripts/default.json):
+ * rules matched in order on the request's text (a role is recognised from
+ * the worker's own prompt wording) and, optionally, a scenario. The
+ * scenario is the model name after "mock/" (pick it per agent / provider in
+ * Settings), the `x-mock-scenario` header, or --scenario.
+ *
+ * Adapted from threadbear (https://github.com/mikecann/threadbear, MIT,
+ * commit b697f32), app/Tools/mock-runner/server.mjs: a stand-in server
+ * that fakes turns, replays a stream at 30 Hz with 2-12 character deltas,
+ * writes a random token (0600) for its client, and refuses to touch real
+ * data (here: it only ever binds to loopback). The OpenAI protocol, rules
+ * and scenarios are Fhara's.
+ *
+ * The wire faults follow DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness,
+ * MIT License, Copyright (c) 2026 DeepSeek, commit e8f7b93),
+ * packages/test-support/llm-mock-server/README.md (behaviour table): the
+ * idea and fault names only, re-done for this OpenAI-compatible mock.
+ */
+import crypto from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { readVar } from "@fhara/config";
+
+export interface MockRule {
+  id: string;
+  /** Recognised role, for the call log ("planner", "classifier", …). */
+  role?: string;
+  /** Only for this scenario (model "mock/<scenario>"). Unset = every scenario. */
+  scenario?: string;
+  /** Regexes (case-insensitive); every one must match the request text. */
+  match?: string[];
+  /** One reply, or several played in order (the last repeats). */
+  reply?: string;
+  replies?: string[];
+  /** Reasoning text streamed before the reply (OpenAI-style `reasoning_content`). */
+  reasoning?: string;
+  /** Answer with this HTTP status instead (error injection: 429, 500, 401). */
+  status?: number;
+  /** Only the first N matches use this rule; later ones fall through. */
+  times?: number;
+  /** Extra latency before answering (ms, divided by the speed; as given at --speed 0). */
+  delayMs?: number;
+  /** Inject a wire fault instead of a clean answer (see MockFault). */
+  fault?: MockFault;
+  /** Content chunks sent before a stream fault strikes (default: half the reply, at least 1). */
+  faultAfterChunks?: number;
+  /** Provider wording of a `context_overflow` 400 (default "openai"). */
+  overflowWording?: OverflowWording;
+}
+
+/**
+ * Wire faults (the behaviour table of an LLM mock server, after DeepSeek
+ * Harness's test-support/llm-mock-server; the OpenAI wire shapes are Fhara's):
+ * - `partial_disconnect`: some deltas, then half an SSE frame and the socket
+ *   is destroyed (a non-stream reply: half the JSON body, then destroyed).
+ * - `connection_reset`: the socket is destroyed before any byte is sent.
+ * - `stall`: headers and some deltas, then nothing until the client gives up.
+ * - `malformed_chunk`: one SSE frame carries broken JSON (it holds the next
+ *   real piece of the reply, so a client that skips it loses that text);
+ *   the stream then finishes normally. A non-stream reply: a cut JSON body.
+ * - `stream_eof`: some deltas, then the stream ends cleanly with no
+ *   finish_reason and no `[DONE]`.
+ * - `context_overflow`: HTTP 400 (or `status`) with a provider's
+ *   context-length wording (`overflowWording`).
+ * - `server_error`: HTTP `status` (default 503); use `times` for a burst.
+ */
+export type MockFault =
+  | "partial_disconnect"
+  | "connection_reset"
+  | "stall"
+  | "malformed_chunk"
+  | "stream_eof"
+  | "context_overflow"
+  | "server_error";
+
+export const MOCK_FAULTS: readonly MockFault[] = [
+  "partial_disconnect",
+  "connection_reset",
+  "stall",
+  "malformed_chunk",
+  "stream_eof",
+  "context_overflow",
+  "server_error",
+];
+
+export type OverflowWording = "openai" | "deepseek" | "anthropic";
+
+/** Context-length error bodies as each provider words them (OpenAI-compatible envelope). */
+export function contextOverflowBody(wording: OverflowWording = "openai"): { error: { message: string; type: string; code?: string; param?: string } } {
+  switch (wording) {
+    case "deepseek":
+      return { error: { message: "This model's maximum context length is 65536 tokens. However, you requested 70214 tokens (66118 in the messages, 4096 in the completion). Please reduce the length of the messages or completion.", type: "invalid_request_error" } };
+    case "anthropic":
+      return { error: { message: "prompt is too long: 214031 tokens > 200000 maximum", type: "invalid_request_error" } };
+    default:
+      return { error: { message: "This model's maximum context length is 128000 tokens. However, your messages resulted in 131072 tokens. Please reduce the length of the messages.", type: "invalid_request_error", code: "context_length_exceeded", param: "messages" } };
+  }
+}
+
+export interface MockScript {
+  rules: MockRule[];
+  fallback: string;
+}
+
+/** On disk a script may extend another: its rules go first, then the base's (`"extends": "default.json"`). */
+interface MockScriptFile extends Partial<MockScript> {
+  extends?: string;
+}
+
+export interface MockCall {
+  n: number;
+  at: number;
+  model: string;
+  scenario: string;
+  rule: string;
+  role: string;
+  stream: boolean;
+  status: number;
+  /** The wire fault this request got, when its rule injects one. */
+  fault?: MockFault;
+  /** First characters of the request text (to write rules for unmatched prompts). */
+  head?: string;
+}
+
+export interface MockLlmOptions {
+  port?: number;
+  /** Replay speed: 1 = 30 Hz, 10 = ten times faster, 0 = no delay. */
+  speed?: number;
+  script?: MockScript;
+  scenario?: string;
+  /** Bearer token required on every request; unset = any token is accepted. */
+  token?: string;
+  quiet?: boolean;
+}
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_SCRIPT_PATH = path.join(HERE, "scripts/default.json");
+const STREAM_HZ = 30;
+
+export function loadScript(file: string = DEFAULT_SCRIPT_PATH, seen: string[] = []): MockScript {
+  const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as MockScriptFile;
+  if (!Array.isArray(parsed.rules)) throw new Error(`mock-llm: ${file} has no "rules" array`);
+  for (const rule of parsed.rules) {
+    if (!rule.id) throw new Error(`mock-llm: a rule in ${file} has no id`);
+    if (rule.fault && !MOCK_FAULTS.includes(rule.fault)) throw new Error(`mock-llm: rule ${rule.id} in ${file} has an unknown fault "${rule.fault}"`);
+    for (const re of rule.match ?? []) new RegExp(re, "i");
+  }
+  if (!parsed.extends) return { rules: parsed.rules, fallback: parsed.fallback ?? "Mock reply." };
+  const basePath = path.resolve(path.dirname(file), parsed.extends);
+  if (seen.includes(basePath)) throw new Error(`mock-llm: ${file} extends itself through ${basePath}`);
+  const base = loadScript(basePath, [...seen, path.resolve(file)]);
+  return { rules: [...parsed.rules, ...base.rules], fallback: parsed.fallback ?? base.fallback };
+}
+
+type ChatMessage = { role?: string; content?: unknown };
+
+function textOf(messages: ChatMessage[]): string {
+  return messages
+    .map((m) => (typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((p: { text?: string }) => p?.text ?? "").join("\n") : ""))
+    .join("\n\n");
+}
+
+/** Pick the rule for one request; counts uses per rule for `times` / `replies`. */
+export function pickRule(
+  script: MockScript,
+  text: string,
+  scenario: string,
+  used: Map<string, number>,
+  disabled: ReadonlySet<string> = new Set(),
+): { rule: MockRule | null; reply: string } {
+  for (const rule of script.rules) {
+    if (disabled.has(rule.id)) continue;
+    if (rule.scenario && rule.scenario !== scenario) continue;
+    if (!(rule.match ?? []).every((re) => new RegExp(re, "i").test(text))) continue;
+    const count = used.get(rule.id) ?? 0;
+    if (rule.times !== undefined && count >= rule.times) continue;
+    used.set(rule.id, count + 1);
+    const replies = rule.replies ?? (rule.reply !== undefined ? [rule.reply] : []);
+    return { rule, reply: replies.length ? replies[Math.min(count, replies.length - 1)] : script.fallback };
+  }
+  return { rule: null, reply: script.fallback };
+}
+
+/** Threadbear's delta sizes: 2 to 12 characters, cycling. */
+export function chunkText(text: string): string[] {
+  const out: string[] = [];
+  for (let i = 0, tick = 0; i < text.length; tick++) {
+    const size = 2 + (tick % 11);
+    out.push(text.slice(i, i + size));
+    i += size;
+  }
+  return out;
+}
+
+const tokensOf = (text: string) => Math.max(1, Math.ceil(text.length / 4));
+const sleep = (ms: number) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
+export async function startMockLlm(options: MockLlmOptions = {}): Promise<{
+  url: string;
+  port: number;
+  token: string | undefined;
+  calls: MockCall[];
+  close: () => Promise<void>;
+}> {
+  const script = options.script ?? loadScript();
+  const speed = options.speed ?? 1;
+  const tickMs = speed > 0 ? 1000 / STREAM_HZ / speed : 0;
+  const used = new Map<string, number>();
+  const disabled = new Set<string>();
+  const calls: MockCall[] = [];
+  const log = (line: string) => {
+    if (!options.quiet) console.log(`[mock-llm] ${line}`);
+  };
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const json = (status: number, body: unknown) => {
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(JSON.stringify(body));
+    };
+    if (options.token && req.headers.authorization !== `Bearer ${options.token}` && !url.pathname.startsWith("/__mock/")) {
+      return json(401, { error: { message: "mock-llm: wrong token", type: "invalid_request_error" } });
+    }
+    if (req.method === "GET" && url.pathname.endsWith("/models")) {
+      const scenarios = Array.from(new Set(script.rules.map((r) => r.scenario).filter(Boolean)));
+      return json(200, { object: "list", data: ["default", ...scenarios].map((id) => ({ id: `mock/${id}`, object: "model", owned_by: "fhara-mock" })) });
+    }
+    if (req.method === "GET" && url.pathname === "/__mock/calls") {
+      // ?head=1 keeps the request text heads (rule writing); default omits them.
+      return json(200, url.searchParams.get("head") ? calls : calls.map(({ head: _head, ...rest }) => rest));
+    }
+    if (req.method === "POST" && url.pathname === "/__mock/reset") {
+      calls.length = 0;
+      used.clear();
+      disabled.clear();
+      return json(200, { ok: true });
+    }
+    // Switch one rule off / on mid-run (a test lifts a scripted 429 before pressing Resume).
+    if (req.method === "POST" && (url.pathname === "/__mock/disable" || url.pathname === "/__mock/enable")) {
+      const id = url.searchParams.get("rule") ?? "";
+      if (!script.rules.some((r) => r.id === id)) return json(404, { error: { message: `mock-llm: no rule ${id}` } });
+      if (url.pathname.endsWith("disable")) disabled.add(id);
+      else disabled.delete(id);
+      return json(200, { ok: true, disabled: Array.from(disabled) });
+    }
+    if (req.method !== "POST" || !url.pathname.endsWith("/chat/completions")) return json(404, { error: { message: `mock-llm: no route ${req.method} ${url.pathname}` } });
+
+    let body: { model?: string; messages?: ChatMessage[]; stream?: boolean };
+    try {
+      const raw = await new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        req.on("error", reject);
+      });
+      body = JSON.parse(raw);
+    } catch {
+      return json(400, { error: { message: "mock-llm: body is not JSON" } });
+    }
+    const model = body.model ?? "mock/default";
+    const header = req.headers["x-mock-scenario"];
+    const scenario = (typeof header === "string" && header) || (model.startsWith("mock/") ? model.slice(5) : "") || options.scenario || "default";
+    const text = textOf(body.messages ?? []);
+    const { rule, reply } = pickRule(script, text, scenario, used, disabled);
+    const fault = rule?.fault;
+    const status = fault === "context_overflow" ? rule?.status ?? 400 : fault === "server_error" ? rule?.status ?? 503 : rule?.status ?? 200;
+    const call: MockCall = { n: calls.length + 1, at: Date.now(), model, scenario, rule: rule?.id ?? "fallback", role: rule?.role ?? "unknown", stream: Boolean(body.stream), status, ...(fault ? { fault } : {}), head: text.slice(0, 400) };
+    calls.push(call);
+    if (calls.length > 500) calls.shift();
+    log(`#${call.n} ${call.role} (${call.rule}) scenario=${scenario}${call.stream ? " stream" : ""}${fault ? ` fault=${fault}` : ""}${status !== 200 ? ` → ${status}` : ""}`);
+    // A scripted latency holds at --speed 0 too (a test needs the call in flight); speed only scales it.
+    await sleep(speed > 0 ? (rule?.delayMs ?? 0) / speed : rule?.delayMs ?? 0);
+
+    let closed = false;
+    req.on("close", () => (closed = true));
+    res.on("close", () => (closed = true));
+    // Waits until the client gives up (a stall); the socket close ends it.
+    const hang = () => new Promise<void>((resolve) => (closed ? resolve() : res.once("close", () => resolve())));
+    const destroy = () => res.socket?.destroy();
+
+    if (fault === "connection_reset") return void destroy();
+    if (fault === "context_overflow") return json(status, contextOverflowBody(rule?.overflowWording));
+    if (status !== 200) {
+      const scripted = rule?.reply !== undefined || rule?.replies !== undefined;
+      return json(status, { error: { message: (fault && !scripted ? "" : reply) || `mock-llm: scripted ${status}`, type: status === 429 ? "rate_limit_exceeded" : "mock_error" } });
+    }
+    const id = `chatcmpl-mock-${call.n}`;
+    const created = Math.floor(Date.now() / 1000);
+    const usage = { prompt_tokens: tokensOf(text), completion_tokens: tokensOf(reply), total_tokens: tokensOf(text) + tokensOf(reply) };
+    if (!body.stream) {
+      const full = JSON.stringify({
+        id, object: "chat.completion", created, model,
+        choices: [{ index: 0, message: { role: "assistant", content: reply, ...(rule?.reasoning ? { reasoning_content: rule.reasoning } : {}) }, finish_reason: "stop" }],
+        usage,
+      });
+      if (!fault) return json(200, JSON.parse(full));
+      const half = full.slice(0, Math.floor(full.length / 2));
+      if (fault === "stall") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.flushHeaders();
+        return hang();
+      }
+      if (fault === "partial_disconnect") {
+        res.writeHead(200, { "content-type": "application/json", "content-length": String(Buffer.byteLength(full)) });
+        res.write(half);
+        return void setTimeout(destroy, 20);
+      }
+      // malformed_chunk / stream_eof: a cut body, sent as if complete.
+      res.writeHead(200, { "content-type": "application/json" });
+      return void res.end(half);
+    }
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    const send = (payload: unknown) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    const frame = (delta: Record<string, unknown>, finish: string | null = null) => ({ id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta, finish_reason: finish }] });
+    send(frame({ role: "assistant", content: "" }));
+    for (const piece of chunkText(rule?.reasoning ?? "")) {
+      if (closed) return;
+      send(frame({ reasoning_content: piece }));
+      await sleep(tickMs);
+    }
+    const pieces = chunkText(reply);
+    const strikeAt = fault ? Math.min(pieces.length, Math.max(1, rule?.faultAfterChunks ?? Math.floor(pieces.length / 2))) : -1;
+    for (let i = 0; i < pieces.length; i++) {
+      if (closed) return;
+      if (i === strikeAt) {
+        if (fault === "partial_disconnect") {
+          const raw = `data: ${JSON.stringify(frame({ content: pieces[i] }))}\n\n`;
+          res.write(raw.slice(0, Math.floor(raw.length / 2)));
+          return void setTimeout(destroy, 20);
+        }
+        if (fault === "stall") return hang();
+        if (fault === "stream_eof") return void res.end();
+        if (fault === "malformed_chunk") {
+          res.write(`data: {"id":"${id}","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":${JSON.stringify(pieces[i])}}\n\n`);
+          await sleep(tickMs);
+          continue;
+        }
+      }
+      send(frame({ content: pieces[i] }));
+      await sleep(tickMs);
+    }
+    if (closed) return;
+    // A fault striking after the last piece (faultAfterChunks ≥ the piece count).
+    if (strikeAt === pieces.length) {
+      if (fault === "partial_disconnect") return void setTimeout(destroy, 20);
+      if (fault === "stall") return hang();
+      if (fault === "stream_eof") return void res.end();
+    }
+    send({ ...frame({}, "stop"), usage });
+    res.end("data: [DONE]\n\n");
+  });
+
+  // Loopback only: the mock must never be reachable from another machine.
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(options.port ?? 0, "127.0.0.1", () => resolve());
+  });
+  const port = (server.address() as { port: number }).port;
+  return {
+    url: `http://127.0.0.1:${port}/v1`,
+    port,
+    token: options.token,
+    calls,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        // A stalled reply holds its socket open until the client gives up; closing the mock ends it.
+        server.closeAllConnections();
+      }),
+  };
+}
+
+// ── CLI ─────────────────────────────────────────────────────────────────
+
+function arg(name: string): string | undefined {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
+async function main(): Promise<void> {
+  // Fhara vars are read through the schema (@fhara/config), never ad hoc.
+  const env = process.env;
+  const port = Number(arg("port") ?? readVar("MOCK_LLM_PORT", env));
+  const speed = Number(arg("speed") ?? readVar("MOCK_LLM_SPEED", env));
+  const scriptPath = arg("script") ?? (readVar("MOCK_LLM_SCRIPT", env) as string | undefined) ?? DEFAULT_SCRIPT_PATH;
+  const dataDir = path.resolve(arg("data-dir") ?? path.join(os.tmpdir(), "fhara-mock-llm"));
+  const token = process.argv.includes("--no-token") ? undefined : crypto.randomBytes(24).toString("hex");
+  const mock = await startMockLlm({ port, speed, script: loadScript(scriptPath), scenario: arg("scenario"), token, quiet: process.argv.includes("--quiet") });
+  fs.mkdirSync(dataDir, { recursive: true });
+  const info = path.join(dataDir, "mock-llm.json");
+  fs.writeFileSync(info, JSON.stringify({ baseUrl: mock.url, port: mock.port, token: token ?? null, pid: process.pid }, null, 2) + "\n", { mode: 0o600 });
+  console.log(`[mock-llm] listening on ${mock.url} (speed ${speed}, script ${path.relative(process.cwd(), scriptPath) || scriptPath})`);
+  console.log(`[mock-llm] provider: kind "openai-compatible", base URL ${mock.url}, model mock/default (or mock/<scenario>)`);
+  console.log(token ? `[mock-llm] API key written to ${info} (0600)` : "[mock-llm] --no-token: any API key is accepted");
+  const stop = () => void mock.close().then(() => process.exit(0));
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(`[mock-llm] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

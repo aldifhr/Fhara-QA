@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    // effect-acp sources keep upstream's explicit `.ts` import extensions
+    // (plan 058 stage 1); the worker imports them since the ACP runtime, so
+    // tsc must accept the same style. Typecheck runs with --noEmit.
+    "allowImportingTsExtensions": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@/api/*": ["../../apps/api/*"],
+      "@api/*": ["../../apps/api/*"],
+      "@/*": ["./src/*"]
+    },
+    "types": ["node", "vitest/globals"],
+    "rootDir": "../..",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*", "tests/**/*", "live-browser-smoke.ts"],
+  "exclude": ["node_modules"]
+}

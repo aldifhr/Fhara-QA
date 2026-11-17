@@ -1,0 +1,431 @@
+"use client";
+
+import { Bell, Check, Copy, GitBranch, LoaderCircle, Menu, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/api/convex/_generated/api";
+import { useState } from "react";
+import InitialAvatar from "../InitialAvatar";
+import OpenInMenu from "./OpenInMenu";
+import ProjectAvatar from "../shell/ProjectAvatar";
+import { PageHeader, type PageHeaderStatus } from "../ui/page-header";
+import { iconButtonClass, popoverClass, usePopover } from "../shell/usePopover";
+import { agentName, roleLabel } from "@/lib/agentRoles";
+import { teamStatusLabel, type StatusMap } from "@/lib/teamStatus";
+import { taskRef } from "@/lib/taskDock";
+import { formatTokens } from "@/lib/runFormat";
+import type { AgentRef as Agent } from "@/lib/types";
+
+export type ChatTab = "chat" | "tasks" | "files";
+
+export type HeaderNotification = {
+  key: string;
+  title: string;
+  meta: string;
+  approvalId?: string;
+  taskId?: string;
+};
+
+type PinnedMessage = { _id: string; content: string; authorType: string; agentId?: string; taskId?: string; _creationTime: number };
+
+/** "shedi.app" from the dev URL, else the repo folder name. */
+function appLabel(project: { devUrl?: string; workspacePath?: string } | null | undefined): string | null {
+  if (!project) return null;
+  if (project.devUrl) {
+    try {
+      return new URL(project.devUrl).host;
+    } catch {
+      /* not a URL — fall through */
+    }
+  }
+  const base = project.workspacePath?.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+  return base || null;
+}
+
+/** The project's run state for the header tag: the user first, then any agent at work. */
+function runStatus(status: StatusMap | undefined, waiting: number): PageHeaderStatus {
+  const words = Object.values(status ?? {}).map((e) => e?.status);
+  if (waiting > 0 || words.some((w) => w === "needs_you" || w === "waiting_on_you")) return { tone: "warn", label: "Needs you" };
+  if (words.some((w) => w === "working" || w === "reviewing" || w === "testing")) return { tone: "active", label: "Running" };
+  if (words.some((w) => w === "queued")) return { tone: "neutral", label: "Queued" };
+  return { tone: "neutral", label: "Idle" };
+}
+
+export default function ChatHeader({
+  project,
+  conversation,
+  agents,
+  status,
+  tab,
+  onTab,
+  openTaskCount,
+  branch,
+  onOpenTask,
+  pins,
+  onJumpToPin,
+  onUnpin,
+  notifications,
+  onApprove,
+  onReject,
+  onOpenAgent,
+  onCopyLink,
+  onManage,
+  onClearChat,
+  onOpenDrawer,
+  formatTime,
+}: {
+  project: { _id?: string; name?: string; devUrl?: string; workspacePath?: string } | null | undefined;
+  /** The project's active conversation; only its id is shown (copy affordance). */
+  conversation?: { _id: string; title?: string } | null;
+  agents: Agent[];
+  status?: StatusMap;
+  tab: ChatTab;
+  onTab: (tab: ChatTab) => void;
+  openTaskCount: number;
+  branch: { name: string; taskId: string; taskTitle: string } | null;
+  onOpenTask: (taskId: string) => void;
+  pins: PinnedMessage[] | undefined;
+  onJumpToPin: (message: PinnedMessage) => void;
+  onUnpin: (messageId: string) => void;
+  notifications: HeaderNotification[];
+  onApprove: (approvalId: string) => Promise<unknown>;
+  onReject: (approvalId: string) => Promise<unknown>;
+  onOpenAgent?: (agentId: string) => void;
+  onCopyLink: () => Promise<boolean>;
+  onManage: () => void;
+  onClearChat: () => void;
+  onOpenDrawer: () => void;
+  formatTime: (ms: number) => string;
+}) {
+  const pinPop = usePopover();
+  const bellPop = usePopover();
+  const morePop = usePopover();
+  const ctxPop = usePopover();
+  const [copied, setCopied] = useState(false);
+  const [acting, setActing] = useState<string | null>(null);
+  const [confirmReject, setConfirmReject] = useState<string | null>(null);
+  const app = appLabel(project);
+  const stacked = agents.slice(0, 5);
+  const pinCount = pins?.length ?? 0;
+  const agentRole = (id?: string) => roleLabel(agents.find((a) => a._id === id)?.role);
+  // Plan 064: total context (prompt tokens over the project's snapshots) for
+  // the header icon; the popover breaks it down per task + chat.
+  const contextTotals = useQuery(
+    api.contextSnapshots.contextTotals,
+    project?._id ? { projectId: project._id as any } : "skip"
+  );
+
+  const act = async (approvalId: string, run: (id: string) => Promise<unknown>) => {
+    setActing(approvalId);
+    setConfirmReject(null);
+    try {
+      await run(approvalId);
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const tabs = (
+    <div role="tablist" aria-label="Workspace view" className="flex items-center rounded-xl bg-hover p-1">
+      {(["chat", "tasks", "files"] as const).map((t) => (
+        <button
+          key={t}
+          type="button"
+          role="tab"
+          aria-selected={tab === t}
+          onClick={() => onTab(t)}
+          className={`flex-1 rounded-lg px-3.5 py-1.5 text-[14px] capitalize outline-none transition focus-visible:ring-2 focus-visible:ring-ink/30 ${
+            tab === t ? "bg-panel font-medium text-ink shadow-[0_1px_2px_rgba(20,20,40,0.08)]" : "text-ink-2 hover:text-ink"
+          }`}
+        >
+          {t}
+          {t === "tasks" && openTaskCount > 0 && <span className="ml-1.5 tabular-nums text-ink-3">{openTaskCount}</span>}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <header className="shrink-0 border-b border-line bg-panel pt-[env(safe-area-inset-top)]">
+      <div className="flex h-[64px] items-center gap-3 px-3 sm:px-5">
+        <button type="button" onClick={onOpenDrawer} aria-label="Open projects and team" className={`${iconButtonClass} -ml-1 min-[980px]:hidden`}>
+          <Menu size={18} />
+        </button>
+        <PageHeader
+          variant="bar"
+          className="min-w-0"
+          leading={<ProjectAvatar name={project?.name ?? "•"} size={34} />}
+          title={<span className="min-w-0 shrink truncate">{project?.name ?? "Project"}</span>}
+          id={conversation ? String(conversation._id) : null}
+          idLabel="conversation id"
+          status={runStatus(status, notifications.length)}
+          meta={
+            <>
+              {stacked.length > 0 && (
+                <span className="flex shrink-0 items-center max-sm:hidden">
+                  {stacked.map((a) => (
+                    <button
+                      key={a._id}
+                      type="button"
+                      onClick={() => onOpenAgent?.(a._id)}
+                      title={`${agentName(a)} · ${teamStatusLabel(status?.[a._id])}`}
+                      aria-label={`${agentName(a)}, ${teamStatusLabel(status?.[a._id])}`}
+                      className="-ml-1 rounded-full ring-2 ring-panel outline-none first:ml-0 focus-visible:ring-ink/30"
+                    >
+                      <InitialAvatar agent avatarParams={a.avatarParams} name={agentName(a)} size={17} />
+                    </button>
+                  ))}
+                </span>
+              )}
+              <span className="truncate text-[13px] text-ink-2">
+                {agents.length} {agents.length === 1 ? "agent" : "agents"}
+                {app ? <span className="max-sm:hidden"> · {app}</span> : null}
+              </span>
+            </>
+          }
+        />
+
+        <div className="mx-auto hidden md:block">{tabs}</div>
+
+        <div className="ml-auto flex items-center gap-0.5 md:ml-0">
+          {branch && (
+            <button
+              type="button"
+              onClick={() => onOpenTask(branch.taskId)}
+              title={`Branch of “${branch.taskTitle}”`}
+              className="mr-1 hidden h-8 max-w-[180px] items-center gap-1.5 rounded-lg border border-line px-2.5 text-[13.5px] text-ink-2 outline-none transition hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 sm:flex"
+            >
+              <GitBranch size={14} className="shrink-0" aria-hidden="true" />
+              <span className="truncate">{branch.name}</span>
+            </button>
+          )}
+
+          <div className="relative" ref={ctxPop.ref}>
+            <button
+              type="button"
+              onClick={ctxPop.toggle}
+              aria-expanded={ctxPop.open}
+              aria-label={`Context used in this project: ~${formatTokens(contextTotals?.promptTokens ?? 0)} prompt tokens`}
+              title="Context used in this project"
+              className={iconButtonClass}
+            >
+              <LoaderCircle size={15} />
+              {(contextTotals?.promptTokens ?? 0) > 0 && (
+                <span className="text-[13px] tabular-nums">~{formatTokens(contextTotals?.promptTokens)}</span>
+              )}
+            </button>
+            {ctxPop.open && (
+              <div className={`${popoverClass} right-0 w-[min(24rem,calc(100vw-1.5rem))]`}>
+                <p className="px-3.5 py-2 text-[13px] font-semibold">Context used in this project</p>
+                <div className="shell-scroll max-h-80 overflow-y-auto">
+                  {!contextTotals && <p className="px-3.5 pb-3 text-[13px] text-ink-3">Loading…</p>}
+                  {contextTotals && contextTotals.calls === 0 && (
+                    <p className="px-3.5 pb-3 text-[13px] text-ink-3">No LLM calls recorded yet, so no context used.</p>
+                  )}
+                  {contextTotals?.tasks.map((t) => (
+                    <button
+                      key={String(t.taskId)}
+                      type="button"
+                      onClick={() => {
+                        ctxPop.setOpen(false);
+                        onOpenTask(String(t.taskId));
+                      }}
+                      className="flex w-full items-center gap-2 border-t border-line px-3.5 py-2.5 text-left hover:bg-hover"
+                    >
+                      <span className="shrink-0 font-mono text-[12.5px] font-medium text-ink">{taskRef(String(t.taskId))}</span>
+                      <span className="text-[13px] tabular-nums text-ink">~{formatTokens(t.promptTokens)}</span>
+                      <span className="ml-auto text-[12px] text-ink-3">
+                        {t.calls} {t.calls === 1 ? "call" : "calls"}
+                      </span>
+                    </button>
+                  ))}
+                  {contextTotals && contextTotals.chat.calls > 0 && (
+                    <div className="flex items-center gap-2 border-t border-line px-3.5 py-2.5">
+                      <span className="text-[12.5px] text-ink-2">Chat</span>
+                      <span className="text-[13px] tabular-nums text-ink">~{formatTokens(contextTotals.chat.promptTokens)}</span>
+                      <span className="ml-auto text-[12px] text-ink-3">
+                        {contextTotals.chat.calls} {contextTotals.chat.calls === 1 ? "call" : "calls"}
+                      </span>
+                    </div>
+                  )}
+                  {contextTotals?.capped && (
+                    <p className="border-t border-line px-3.5 py-2 text-[12px] text-ink-3">
+                      Totals cover the most recent 2,000 calls only.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative" ref={pinPop.ref}>
+            <button
+              type="button"
+              onClick={pinPop.toggle}
+              aria-expanded={pinPop.open}
+              aria-label={`${pinCount} pinned message${pinCount === 1 ? "" : "s"}`}
+              title="Pinned messages"
+              className={iconButtonClass}
+            >
+              <Pin size={15} />
+              {pinCount > 0 && <span className="text-[13px] tabular-nums">{pinCount > 99 ? "99+" : pinCount}</span>}
+            </button>
+            {pinPop.open && (
+              <div className={`${popoverClass} right-0 w-[min(22rem,calc(100vw-1.5rem))]`}>
+                <p className="px-3.5 py-2 text-[13px] font-semibold">Pinned</p>
+                <div className="shell-scroll max-h-80 overflow-y-auto">
+                  {pinCount === 0 && <p className="px-3.5 pb-3 text-[13px] text-ink-3">Nothing pinned yet. Use ⋯ on a message to pin it.</p>}
+                  {(pins ?? []).map((m) => (
+                    <div key={m._id} className="group flex items-start gap-2 border-t border-line px-3.5 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pinPop.setOpen(false);
+                          onJumpToPin(m);
+                        }}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="text-[12.5px] text-ink-3">
+                          <span className="font-medium text-ink-2">{m.authorType === "agent" ? agentRole(m.agentId) : "You"}</span> · {formatTime(m._creationTime)}
+                        </p>
+                        <p className="mt-0.5 line-clamp-2 break-words text-[13.5px] text-ink">{m.content}</p>
+                      </button>
+                      <button type="button" aria-label="Unpin message" title="Unpin" onClick={() => onUnpin(m._id)} className="rounded-md p-1.5 text-ink-3 hover:bg-hover hover:text-ink">
+                        <PinOff size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative" ref={bellPop.ref}>
+            <button
+              type="button"
+              onClick={bellPop.toggle}
+              aria-expanded={bellPop.open}
+              aria-label={`Needs you in this project: ${notifications.length}`}
+              title="Needs you in this project"
+              className={`${iconButtonClass} relative`}
+            >
+              <Bell size={16} />
+              {notifications.length > 0 && <span aria-hidden="true" className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-danger ring-2 ring-panel" />}
+            </button>
+            {bellPop.open && (
+              <div className={`${popoverClass} right-0 w-[min(22rem,calc(100vw-1.5rem))]`}>
+                <p className="px-3.5 py-2 text-[13px] font-semibold">Needs you in this project</p>
+                <div className="shell-scroll max-h-80 overflow-y-auto">
+                  {notifications.length === 0 && <p className="px-3.5 pb-3 text-[13px] text-ink-3">Nothing is waiting on you in this project.</p>}
+                  {notifications.map((n) => (
+                    <div key={n.key} className="border-t border-line px-3.5 py-2.5">
+                      <button
+                        type="button"
+                        disabled={!n.taskId}
+                        onClick={() => {
+                          if (!n.taskId) return;
+                          bellPop.setOpen(false);
+                          onOpenTask(n.taskId);
+                        }}
+                        className="block w-full text-left"
+                      >
+                        <p className="line-clamp-2 text-[14px] font-medium text-ink">{n.title}</p>
+                        <p className="mt-0.5 text-[12.5px] text-ink-3">{n.meta}</p>
+                      </button>
+                      {n.approvalId && (
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={acting !== null}
+                            onClick={() => void act(n.approvalId!, onApprove)}
+                            className="h-7 rounded-lg bg-ink px-2.5 text-[12.5px] font-medium text-canvas hover:bg-ink/85 disabled:opacity-50"
+                          >
+                            {acting === n.approvalId ? "Working…" : "Approve"}
+                          </button>
+                          {confirmReject === n.approvalId ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={acting !== null}
+                                onClick={() => void act(n.approvalId!, onReject)}
+                                className="h-7 rounded-lg bg-danger px-2.5 text-[12.5px] font-medium text-canvas hover:bg-danger/85 disabled:opacity-50"
+                              >
+                                Confirm reject
+                              </button>
+                              <button type="button" onClick={() => setConfirmReject(null)} className="h-7 rounded-lg px-2 text-[12.5px] text-ink-2 hover:text-ink">
+                                Keep
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={acting !== null}
+                              onClick={() => setConfirmReject(n.approvalId!)}
+                              className="h-7 rounded-lg border border-line px-2.5 text-[12.5px] text-ink hover:bg-hover disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative" ref={morePop.ref}>
+            <button type="button" onClick={morePop.toggle} aria-expanded={morePop.open} aria-label="More actions" title="More" className={iconButtonClass}>
+              <MoreHorizontal size={17} />
+            </button>
+            {morePop.open && (
+              <div role="menu" className={`${popoverClass} right-0 w-52`}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={async () => {
+                    const ok = await onCopyLink();
+                    setCopied(ok);
+                    setTimeout(() => {
+                      setCopied(false);
+                      morePop.setOpen(false);
+                    }, 900);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] hover:bg-hover"
+                >
+                  {copied ? <Check size={15} className="text-ok" /> : <Copy size={15} className="text-ink-3" />}
+                  {copied ? "Link copied" : "Copy project link"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    morePop.setOpen(false);
+                    onManage();
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] hover:bg-hover"
+                >
+                  <Pencil size={15} className="text-ink-3" /> Manage project
+                </button>
+                <OpenInMenu projectId={project?._id} branch={branch} onDone={() => morePop.setOpen(false)} />
+                <div className="my-1 h-px bg-line" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    morePop.setOpen(false);
+                    onClearChat();
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-danger hover:bg-hover"
+                >
+                  <Trash2 size={15} /> Clear chat
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="px-3 pb-2.5 md:hidden">{tabs}</div>
+    </header>
+  );
+}

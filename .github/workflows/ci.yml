@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck + test (${{ matrix.os }})
+    # macOS is in the matrix because the worker and the provider packages carry
+    # darwin branches (process groups, editor bundles, managed-policy plist,
+    # ACP darwin targets) that no Linux runner can execute. macos-latest is
+    # arm64; there is no Intel image in this matrix.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      # No secrets in CI: no Convex deployment, no LLM keys. Live-LLM / e2e
+      # suites are gated on these and stay skipped.
+      CI: "true"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Convex _generated (offline, no deploy key)
+        run: pnpm run codegen:offline
+
+      - name: Guards (code budget, UI rules, import cycles)
+        run: pnpm run check:guards
+
+      - name: Typecheck (all workspaces)
+        run: pnpm -r run typecheck
+
+      - name: Test api (vitest)
+        run: pnpm --filter @fhara/api run test
+
+      - name: Test worker (vitest)
+        run: pnpm --filter @fhara/worker run test

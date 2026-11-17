@@ -1,0 +1,605 @@
+import { runWithObservationScope } from "@/effects/observationContext";
+import { normalizeModelTiers } from "@/api/convex/lib/modelTiers";
+import type { LlmSelectionMode } from "@/api/convex/lib/llmSelection";
+import { withSnapshotScope } from "@/llm/snapshots";
+import { parseStoredRequirements } from "@/api/convex/lib/requirements";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import type { WorkerRunAgent, WorkerTask } from "@/workerApi";
+import type { AgentDefinition, ExecutionPlan, SubtaskKind } from "@/types";
+import { pickResponseOwner, responseOwnerAgent } from "@/orchestrator/responseOwner";
+import { classifyCommand } from "@/orchestrator/classifier";
+import { applyRoutingHint, taskRoutingHint } from "@/orchestrator/planningHint";
+import { policyForComplexity, subtaskTimeoutFor } from "@/orchestrator/policy";
+import { validateStoredPlan } from "@/orchestrator/planValidator";
+import { BudgetTracker } from "@/orchestrator/budget";
+import { createSharedTaskContext } from "@/orchestrator/taskContext";
+import type { GlobalLLMConfig } from "@/llm";
+import { LlmConcurrencyGate } from "@/effects/llmCall";
+import type { TaskLlmResolver } from "@/llm/resolver";
+import type { RunnerDeps, RunState } from "./runner/types";
+import { buildStateFromDb } from "./runner/state";
+import {
+  buildTaskLlmResolver,
+  mcpForTask,
+  webReachForTask,
+  resolveQaBaseUrl,
+  resolveWorkspacePath,
+  seedBudgetFromPersisted,
+  toAgentDefinition,
+  withFileContexts,
+} from "./runner/setup";
+import { armTaskAbort, taskStatusReader } from "./runner/abort";
+import {
+  failStepLimit,
+  failTaskWithError,
+  finishAlreadyDone,
+  finishBudgetExhaustedTask,
+  finishCancelledTask,
+  isTerminalTaskStatus,
+} from "./runner/terminal";
+import { decideReplan, failureKindForEnding, type FailureKind, type ReplanObservation } from "@/orchestrator/decisionEngine";
+import { settleCompletedRun } from "./runner/settleCompleted";
+import { finalize } from "./runner/finalize";
+import { runSetupOnWorktreeCreate } from "./runner/projectScriptHooks";
+import { executePlan } from "./runner/executePlan";
+import { createInitialPlan, type PlanningContext } from "./runner/planning";
+import { replanOnce, type ReplanLoopState } from "./runner/replan";
+import { planReviewGate } from "./runner/planReview";
+import { seedAllowedEscalations } from "./runner/escalation";
+import { archStopCancelled } from "./runner/archDecision";
+import { releaseAfterPause } from "./runner/pause";
+import { resolveTaskIsolation } from "./runner/isolationPolicy";
+import {
+  createBudgetGate,
+  createUsageRecorder,
+  dynamicSubtaskPersister,
+  mcpStatusReporter,
+  threadUserAnswers,
+} from "./runner/session";
+import { plainServerError } from "@/api/convex/lib/repoReadiness";
+
+// Public surface of `@/services/taskRunner`: the task lifecycle entry
+// points (processTask / resumeTask) plus re-exports tests and
+// `src/index.ts` import. The stages live in `./runner/*`:
+//   planning.ts     initial plan (authoritative / legacy) + planner calls
+//   replan.ts       replanOnce — the ONE bounded re-plan path (whether to
+//                   replan is decisionEngine/replan.ts decideReplan)
+//   settleCompleted.ts  memory, role learnings, lifecycle after finalize
+//   executePlan.ts  stage driver (DAG → review → apply → verify → QA → merge)
+//   runContext.ts   per-invocation RunContext (latches, closures, applyStaged)
+//   applyStage.ts   approval request, permission broker, worktree commit/merge
+//   resume.ts       resumeTask (post-approval)
+//   session.ts      budget gate, usage sink, MCP status, dynamic-subtask sink
+//   terminal.ts     terminal endings (cancelled / budget / failed / step limit)
+export { buildStateFromDb, carryForwardState } from "./runner/state";
+export { resolveQaBaseUrl } from "./runner/setup";
+export { resumeTask } from "./runner/resume";
+export type { ExecutePlanResult } from "./runner/executePlan";
+export type { RunnerDeps, RunState } from "./runner/types";
+
+export async function processTask(task: WorkerTask, deps: RunnerDeps): Promise<void> {
+  // Context Snapshot scope: every LLM call of this run belongs to this task.
+  return await withSnapshotScope({ taskId: String(task._id), projectId: String(task.projectId) }, () =>
+    processTaskScoped(task, deps)
+  );
+}
+
+async function processTaskScoped(task: WorkerTask, deps: RunnerDeps): Promise<void> {
+  const context = await deps.api.getContext({ taskId: task._id });
+  if (!context?.project) {
+    await deps.api.completeTask({
+      taskId: task._id,
+      status: "failed",
+      errorMessage: "Project not found for task",
+    });
+    return;
+  }
+  const { project, agents, approvalMode, llmProviders } = context;
+  // Plan 035: the app-wide OpenCode runtime + model. Absent when the setting
+  // was never written, so the worker keeps the legacy per-agent behaviour.
+  const opencodeCtx = context as {
+    opencodeRuntime?: "api" | "opencode";
+    opencodeModel?: string;
+    nativeDriver?: "opencode" | "codex" | "acp";
+  };
+  const opencodeSettings = opencodeCtx.opencodeRuntime
+    ? {
+        runtime: opencodeCtx.opencodeRuntime,
+        model: opencodeCtx.opencodeModel ?? "",
+        ...(opencodeCtx.nativeDriver ? { nativeDriver: opencodeCtx.nativeDriver } : {}),
+      }
+    : null;
+  if (agents.length === 0) {
+    await deps.api.completeTask({
+      taskId: task._id,
+      status: "failed",
+      errorMessage: "No agents are assigned to this project",
+    });
+    return;
+  }
+  // LLM resolution is per agent (Phase 2 resolver): the pool is
+  // materialized once per task (keys decrypted here, never via process.env
+  // mutation), and each planner/executor call resolves its own agent's
+  // assignment → fallback → pool chain. `llmConfig` remains as the
+  // task-level default for agent-less consumers.
+  let llmResolver: TaskLlmResolver;
+  let llmConfig: GlobalLLMConfig;
+  try {
+    llmResolver = await buildTaskLlmResolver(
+      llmProviders,
+      normalizeModelTiers((project as { modelTiers?: unknown }).modelTiers),
+      (context as { llmSelectionMode?: LlmSelectionMode }).llmSelectionMode
+    );
+    llmConfig = llmResolver.defaultConfig();
+  } catch (error) {
+    await deps.api.completeTask({
+      taskId: task._id,
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  // QA base URL is resolved once per task (project.qaUrl > project.devUrl >
+  // worker-start env fallback) and threaded explicitly to the QA executor.
+  // It is never written to process.env: with concurrent tasks the shared
+  // variable raced, so one project's QA could run against another's URL,
+  // and projects without a URL silently inherited the previous task's.
+  const qaBaseUrl = resolveQaBaseUrl(project);
+
+  let workspacePath = resolveWorkspacePath(deps.workspaceRoot, project.workspacePath);
+  await fs.mkdir(workspacePath, { recursive: true });
+
+  // Plan 009: seed the shared MCP registry for this workspace. Status
+  // reports are best-effort; the task runs on regardless.
+  const mcp = mcpForTask(context.mcpServers, workspacePath, deps.policy, mcpStatusReporter(deps));
+  // Plan 036: the Agent Reach web tool for read-only agents.
+  const webReach = webReachForTask(deps.policy);
+
+  let branchName: string | undefined;
+  let worktreePath: string | undefined;
+  const workspacePathBefore = workspacePath;
+  // L3: isolation "auto" is decided per task (git repo, commit, clean checkout, local backend).
+  deps = await resolveTaskIsolation(deps, { taskId: task._id, projectId: project._id, workspacePath });
+  if (deps.policy.worktreeIsolation) {
+    try {
+      const created = await deps.api.createBranch({
+        taskId: task._id,
+        projectId: project._id,
+        // Absolute, so the backend resolves a relative project path exactly
+        // like resolveWorkspacePath above (live test 4: git ENOENT).
+        workspaceRoot: path.resolve(deps.workspaceRoot),
+      });
+      // Lane git-init: not a repository / no commits → a plain line the
+      // backend turns into a "repo" hold (Initialize git), not a failure.
+      if ("held" in created) {
+        await deps.api.completeTask({ taskId: task._id, status: "failed", errorMessage: created.reason });
+        return;
+      }
+      branchName = created.branchName;
+      worktreePath = resolveWorkspacePath(deps.workspaceRoot, created.worktreePath);
+      workspacePath = worktreePath;
+      await fs.mkdir(workspacePath, { recursive: true });
+      // GOAT G9 / T6: the project's setup script, once per new worktree.
+      await runSetupOnWorktreeCreate(deps.api, {
+        taskId: task._id,
+        projectId: project._id,
+        scripts: project.scripts,
+        projectRoot: workspacePathBefore,
+        worktreePath,
+        created: (created as { created?: boolean }).created === true,
+      }).catch((error) => deps.log("[setup-script] failed", error instanceof Error ? error.message : String(error)));
+    } catch (error) {
+      await deps.api.completeTask({
+        taskId: task._id,
+        status: "failed",
+        // No Request ID or stack on the task card (lane git-init).
+        errorMessage: `Worktree isolation requested but unavailable: ${plainServerError(
+          error instanceof Error ? error.message : String(error)
+        )}`,
+      });
+      return;
+    }
+  }
+
+  // When the CTO assigned this task from chat, the backend already narrows
+  // the pool to task.assignedAgentIds ([CTO, assignees, Reviewer, QA]).
+  // Keep the assignment ORDER (assignees before any other agent serving
+  // the same capability) so routing ties go to the assigned implementers.
+  const assignedOrder = ((task as { assignedAgentIds?: string[] }).assignedAgentIds ?? []).map(String);
+  const runAgents = (agents as WorkerRunAgent[])
+    .map(toAgentDefinition)
+    .map((agent, index) => ({ agent, index }))
+    .sort((a, b) => {
+      const ra = assignedOrder.indexOf(String(a.agent._id));
+      const rb = assignedOrder.indexOf(String(b.agent._id));
+      if (ra === -1 && rb === -1) return a.index - b.index;
+      if (ra === -1) return 1;
+      if (rb === -1) return -1;
+      return ra - rb;
+    })
+    .map(({ agent }) => agent);
+  const command = await withFileContexts(deps.workspaceRoot, project.workspacePath, task.command);
+  // P1a: chat's routing hint is the prior; the text classifier keeps its hard rules.
+  const classification = applyRoutingHint(classifyCommand(command), command, taskRoutingHint(task));
+  // High/ultra changes run under the larger subtask timeout / deadline.
+  deps = { ...deps, policy: policyForComplexity(deps.policy, classification.complexity) };
+  await deps.api.logEvent({
+    taskId: task._id,
+    projectId: project._id,
+    type: "task.classified",
+    payload: {
+      kind: classification.kind,
+      strategy: classification.strategy,
+      reasons: classification.reasons,
+      ...(classification.complexity ? { complexity: classification.complexity } : {}),
+      ...(classification.concerns ? { concerns: classification.concerns.map((c) => c.category) } : {}),
+      subtaskTimeoutMs: subtaskTimeoutFor(deps.policy),
+    },
+  });
+
+  // Intelligent orchestrator: shared context + budget
+  const budget = new BudgetTracker(deps.policy);
+  // Seed the tracker with usage already persisted for this task (e.g. calls
+  // made before a worker restart) so limits apply to the task as a whole —
+  // the FULL state (agents/delegations/retries from the budget snapshot),
+  // with failures surfaced as events (Phase 5; see seedBudgetFromPersisted).
+  await seedBudgetFromPersisted({
+    deps,
+    taskId: task._id,
+    projectId: project._id,
+    budget,
+  });
+  const assertBudgetForCall = createBudgetGate(deps, budget, task._id, project._id);
+  const recordUsage = createUsageRecorder(deps, budget, task._id, project._id);
+  const sharedContext = createSharedTaskContext({
+    taskId: task._id,
+    projectId: project._id,
+    originalRequest: command,
+    title: task.title,
+    classification,
+    instructions: (project as { instructions?: string }).instructions,
+  });
+  // Plan 013 step 4: a re-queued run threads the user's answer(s) into
+  // the shared context before planning/execution reads it.
+  await threadUserAnswers(deps, task._id, sharedContext);
+  await deps.api
+    .upsertTaskContext?.({
+      taskId: task._id,
+      projectId: project._id,
+      originalRequest: command,
+      objective: command.slice(0, 500),
+      status: (task.status as any) || "running",
+      // Keep the threaded user input: writing [] here erased persisted
+      // user_answer decisions before the run's first prompt (M9).
+      decisions: sharedContext.decisions,
+      artifacts: [],
+      outstandingIssues: [],
+      // Phase 5: persist the seeded budget state alongside the context
+      // so the next resume/recovery restores the full tracker.
+      budgetSnapshot: budget.snapshot(),
+    })
+    ?.catch(() => undefined);
+  await deps.api.recordLifecycle?.({ taskId: task._id, projectId: project._id, state: "RUNNING" })?.catch(() => undefined);
+
+  // Phase 4 hardening: ONE per-task LLM gate for this whole run, sized
+  // by THIS task's policy and owned by this run alone — concurrent
+  // tasks never share it and never resize each other's bound. The task
+  // deadline is armed NOW, before planning, so a slow planner runs under
+  // the deadline and a task cancelled during planning never executes a
+  // fresh plan.
+  const llmTaskGate = new LlmConcurrencyGate(deps.policy.maxConcurrentLLMCalls);
+  const taskAbort = armTaskAbort(deps.policy, deps.shutdownSignal, taskStatusReader(deps, task._id));
+  const signal = taskAbort.controller.signal;
+  const cancel = () => finishCancelledTask({ deps, task, project, signal });
+  const fail = (message: string, failureKind?: FailureKind) =>
+    failTaskWithError({ deps, taskId: task._id, projectId: project._id, message, failureKind });
+
+  try {
+    // Every LLM call in this run (planning, replanning, decisions, stage
+    // checks) marks progress on start and finish (effects/llmCall), which
+    // bumps the task idle watchdog. Subtask scopes nest their own
+    // progress, which bumps it too (live test 3: a 5-8 min replan was
+    // killed as "Task idle exceeded" because only subtasks bumped it).
+    await runWithObservationScope({ progress: taskAbort.bump }, async () => {
+    const pctx: PlanningContext = {
+      deps,
+      task,
+      project,
+      command,
+      agents: runAgents,
+      plannerAgent: context.plannerAgent
+        ? toAgentDefinition(context.plannerAgent as WorkerRunAgent)
+        : null,
+      plannerFallbackReason: context.plannerFallbackReason ?? null,
+      classification,
+      budget,
+      sharedContext,
+      llmConfig,
+      llmResolver,
+      recordUsage,
+      assertBudgetForCall,
+      signal,
+      llmTaskGate,
+      bump: taskAbort.bump,
+      // Plan 025: requirements a previous run stored keep their ids.
+      requirements: parseStoredRequirements((context.task as { requirements?: unknown }).requirements),
+    };
+    // Plan Inspector "Replan with note": the user discarded the plan under
+    // review; plan afresh with the note as planner feedback (the next
+    // saved planner version clears the note).
+    const replanNote = (context.task as { planReviewNote?: string }).planReviewNote?.trim() || undefined;
+    const stored =
+      context.plan && !replanNote ? validateStoredPlan(context.plan.payload, deps.policy.maxSubtasks) : null;
+    if (stored && !stored.ok && context.plan?.createdBy === "user") {
+      // A user-edited version that no longer validates is never executed:
+      // a fresh plan is made and (when review applies) reviewed again.
+      await deps.api.logEvent({
+        taskId: task._id,
+        projectId: project._id,
+        type: "plan.user_version_invalid",
+        payload: { version: context.plan.version, errors: stored.errors.slice(0, 10) },
+        level: "warn",
+      });
+    }
+    const storedPlan = stored?.ok && stored.plan ? stored.plan : null;
+    const initial = await createInitialPlan(pctx, storedPlan, context.plan, replanNote);
+    if (!initial) return;
+
+    // Plan Inspector: pause after plan.created for the user's review when
+    // the project setting applies. Approval re-queues the task; this run
+    // then adopts the approved stored plan and passes the gate.
+    const review = await planReviewGate({
+      deps,
+      task: context.task,
+      project,
+      planVersion: initial.planVersion,
+      classification,
+      executionStarted:
+        (context.executions ?? []).length > 0 ||
+        (context.subtasks ?? []).some((subtask: { status: string }) => subtask.status !== "pending"),
+    });
+    if (review === "paused") return;
+
+    // Plan 022: a pause that landed while planning ran: stop before the
+    // first dispatch (the stored plan is the checkpoint Resume uses).
+    {
+      const now = await deps.api.getContext({ taskId: task._id });
+      if (now?.task.status === "paused") {
+        await releaseAfterPause(deps, task._id, project._id);
+        return;
+      }
+    }
+
+    // Recovery (Phase 4): when the stored plan was adopted, this run
+    // continues work a previous worker already persisted — seed the
+    // execution state from the DB via the ONE builder shared with
+    // resumeTask, so completed subtasks are not re-executed and their
+    // staged file changes are not lost. A freshly created plan (and every
+    // replan below) starts from an empty state.
+    const seeded = storedPlan
+      ? buildStateFromDb({
+          subtasks: context.subtasks,
+          executions: context.executions,
+          fileChanges: await deps.api.getFileChanges({ taskId: task._id }),
+          recordedSteps: context.recordedSteps,
+        })
+      : null;
+    const state: RunState = seeded?.state ?? {
+      priorOutputs: new Map(),
+      qaVerdicts: {},
+      reviewVerdicts: {},
+      fileChanges: new Map(),
+      appliedFilesBySubtask: new Map(),
+      feedback: [],
+    };
+    // Plan 022: the user's answer to an escalation question allows the
+    // escalated action for this run (a declining answer keeps the guard).
+    const latestAnswer = [...sharedContext.decisions].reverse().find((entry) => entry.decision === "user_answer")?.reason;
+    seedAllowedEscalations(
+      state,
+      (context.subtasks ?? []) as Array<{ acceptanceStatus?: string; escalation?: { kind: string; detail?: string } }>,
+      latestAnswer
+    );
+    // O2: the user answered a held CTO `stop` with cancel: the task ends
+    // cancelled here (a resume answer just continues the stored plan).
+    if (storedPlan && archStopCancelled(context.subtasks, latestAnswer)) {
+      await cancel();
+      return;
+    }
+    const loop: ReplanLoopState = {
+      plan: initial.plan,
+      planVersion: initial.planVersion,
+      replans: task.replanCount ?? 0,
+      feedback: undefined,
+      completedKeys: seeded?.completedKeys ?? new Set<string>(),
+    };
+    // Spec §7 vocabulary: maxPlanningIterations is the single bound on
+    // planning iterations; it aliases maxReplans in loadPolicy and falls
+    // back to it for hand-built policies that omit the alias.
+    const maxPlanningIterations =
+      deps.policy.maxPlanningIterations ?? deps.policy.maxReplans;
+
+    // eslint-disable-next-line no-constant-condition -- the loop exits from inside
+    while (true) {
+      await deps.api.logEvent({
+        taskId: task._id,
+        projectId: project._id,
+        type: "task.stage",
+        payload: { stage: "executing", planVersion: loop.planVersion },
+      });
+
+      const outcome = await executePlan({
+        deps,
+        task,
+        project,
+        workspacePath,
+        agents: runAgents,
+        plannerAgent: pctx.plannerAgent,
+        plan: loop.plan,
+        planVersion: loop.planVersion,
+        state,
+        feedback: loop.feedback,
+        approvalMode,
+        completedKeys: loop.completedKeys,
+        taskAbort: Object.assign(taskAbort.controller, { bump: taskAbort.bump }),
+        budget,
+        assertBudgetForCall,
+        sharedContext,
+        classification,
+        llmConfig,
+        llmResolver,
+        llmTaskGate,
+        // Plan 035: the app-wide OpenCode runtime + model (plan 035).
+        ...(opencodeSettings
+          ? {
+              opencodeRuntime: opencodeSettings.runtime,
+              opencodeModel: opencodeSettings.model,
+              ...(opencodeSettings.nativeDriver ? { nativeDriver: opencodeSettings.nativeDriver } : {}),
+            }
+          : {}),
+        onTokenUsage: recordUsage,
+        qaBaseUrl,
+        mcp,
+        webReach,
+        worktree:
+          branchName && worktreePath ? { branchName, worktreePath } : undefined,
+        onDynamicSubtasks: dynamicSubtaskPersister(deps, task._id, project._id),
+        replansLeft: Math.max(0, maxPlanningIterations - loop.replans),
+      });
+
+      // Plan 022: user pause — running work drained, nothing new started.
+      if (outcome.status === "paused") {
+        await releaseAfterPause(deps, task._id, project._id);
+        return;
+      }
+
+      // ask_user pause (plan 013 step 4): the backend already holds the
+      // question in `waiting_input`; this invocation just ends. The
+      // user's answer re-queues the task for a fresh worker claim.
+      if (outcome.status === "waiting_approval" || outcome.status === "waiting_input") return;
+
+      // Plan 005 Step 5.4: the decision step bound is terminal.
+      if (outcome.status === "step_limit") {
+        await failStepLimit({ deps, taskId: task._id, projectId: project._id });
+        return;
+      }
+
+      // Cancellation is terminal (Phase 4 hardening): a cancelled or
+      // timed-out task ends here — never replanned, finalized, or done.
+      if (outcome.status === "cancelled") {
+        await cancel();
+        return;
+      }
+
+      // P1b phase 2 (one replan owner): every outcome below is reported to
+      // the Decision Engine as a replan trigger, and the ONE decideReplan
+      // call says what happens next (replan, fail or hold, no-op done,
+      // budget stop, cancel, or carry on).
+      let trigger: ReplanObservation["trigger"];
+      let reason: string | undefined;
+      let settleCompleted: (() => Promise<void>) | null = null;
+      if (outcome.status === "replan") {
+        // Plan 013 step 3: the engine (or an executePlan gate) asked for a
+        // re-plan; the reason is the objective missing list or the gate's own.
+        trigger = "objective_unmet";
+        reason = outcome.replanFeedback;
+      } else if (outcome.status === "completed") {
+        const after = await deps.api.getContext({ taskId: task._id });
+        // Terminal guard (Phase 4 hardening): the cancellation may have
+        // landed while the scheduler was finishing its last node (or the
+        // task row already turned terminal by another path). A cancelled
+        // task must not be finalized into "done".
+        if (signal.aborted || isTerminalTaskStatus(after?.task.status)) {
+          await cancel();
+          return;
+        }
+        const verification = await finalize({
+          deps,
+          task,
+          project,
+          // Apply writes to the main workspace; verify where the files
+          // actually landed. runVerification + evaluateTask both read
+          // input.workspacePath, so this single change aligns both.
+          workspacePath: resolveWorkspacePath(deps.workspaceRoot, project.workspacePath),
+          plan: loop.plan,
+          planVersion: loop.planVersion,
+          agents: runAgents,
+          subtasks: after?.subtasks ?? [],
+          state,
+          openIssues: sharedContext.outstandingIssues,
+          signal,
+        });
+        settleCompleted = () =>
+          settleCompletedRun({
+            deps, task, project, state, verdict: verification.verdict, agents: runAgents, subtasks: after?.subtasks ?? [],
+            llmResolver, assertBudgetForCall, llmTaskGate, recordUsage, signal,
+          });
+        if (verification.verdict !== "failed") {
+          await settleCompleted();
+          return;
+        }
+        trigger = "verify_failed";
+        reason = `Verification failed: ${verification.checks
+          .filter((check) => check.status === "failed")
+          .map((check) => `${check.name}: ${check.details ?? ""}`)
+          .join("; ")}`;
+      } else {
+        // Execution failed before any approval.
+        trigger = "terminal_failure";
+      }
+
+      const next = decideReplan({
+        kind: "replan_trigger",
+        trigger,
+        reason,
+        facts: {
+          replansLeft: Math.max(0, maxPlanningIterations - loop.replans),
+          replans: loop.replans,
+          feedback: state.feedback,
+          fileChanges: state.fileChanges,
+          terminalFailure: state.terminalFailure,
+          aborted: signal.aborted,
+        },
+      });
+      switch (next.kind) {
+        case "proceed":
+          await settleCompleted?.();
+          return;
+        case "cancel":
+          await cancel();
+          return;
+        case "budget_exhausted":
+          await finishBudgetExhaustedTask({ deps, task, project, budget, reason: next.reason });
+          return;
+        case "already_done":
+          await finishAlreadyDone({ deps, taskId: task._id, projectId: project._id, files: next.files, agentId: ownerIdOf(loop.plan, runAgents) });
+          return;
+        case "fail":
+        case "block":
+          await fail(next.message, failureKindForEnding({ trigger, executeKind: outcome.failureKind }));
+          return;
+        case "replan": {
+          const { kind: _kind, ...replanInput } = next;
+          const result = await replanOnce(pctx, loop, state, replanInput);
+          if (result === "ended") return;
+          if (result === "rejected") {
+            await fail(loop.rejection ?? "Replan rejected by the quality check");
+            return;
+          }
+          continue;
+        }
+      }
+    }
+    });
+  } finally {
+    taskAbort.dispose();
+  }
+}
+
+/** O2: the Response Owner's agent id (the no-op report speaks as the plan's primary role). */
+function ownerIdOf(plan: ExecutionPlan, agents: AgentDefinition[]): string | undefined {
+  return responseOwnerAgent(pickResponseOwner(plan, agents), agents)?._id;
+}
+
+export type { SubtaskKind };

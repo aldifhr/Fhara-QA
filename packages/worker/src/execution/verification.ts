@@ -1,0 +1,603 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { buildChildEnv } from "@/api/convex/lib/childEnv";
+import { redactText } from "@/utils/redact";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import type { EvaluationCheck } from "@/types";
+import { classifyVerifyFailure, ensureWorktreeDependencies } from "./verifyEnv";
+import {
+  baselineCacheKey,
+  baselineEnabled,
+  cachedBaseline,
+  compareWithBaseline,
+  createBaselineTree,
+  describeSignature,
+  storeBaseline,
+  type BaselineRun,
+  type BaselineTree,
+} from "./verifyBaseline";
+
+export interface VerificationOptions {
+  workspacePath: string;
+  changedFiles?: string[];
+  includeBuild?: boolean;
+  timeoutMs?: number;
+  onCheck?: (check: EvaluationCheck) => Promise<void> | void;
+  /**
+   * Only failures in these files count for typecheck / lint (the files the
+   * task changed, workspace-relative). A failure whose output names only
+   * other files already existed before the change: it is reported as
+   * pre-existing and ignored, and verification moves on to the next step.
+   * Defaults to `changedFiles`; [] disables the scoping.
+   */
+  scopeFiles?: string[];
+  /**
+   * Task cancellation signal (Phase 4): checked between steps, and a
+   * firing signal kills the running step's process tree via the same
+   * killTree the timeout uses.
+   */
+  signal?: AbortSignal;
+  /**
+   * Pre-change baseline (R1): when a typecheck / lint / test step fails,
+   * re-run the same command once on the tree as it was before the task
+   * (a temporary git worktree at HEAD plus the workspace's own edits to
+   * files the task did not touch) and count only failures that are NEW.
+   * Defaults to on (ORCHESTRATOR_VERIFY_BASELINE=0 turns it off). Outside
+   * a git repository the file-name heuristic (`scopeFiles`) still applies.
+   */
+  baseline?: boolean;
+}
+
+export interface VerificationResult {
+  checks: EvaluationCheck[];
+  ran: string[];
+  skipped: string[];
+  /** Package dirs whose node_modules were linked from the main checkout (worktree runs). */
+  linkedDependencies?: string[];
+}
+
+interface StepDefinition {
+  name: string;
+  scripts: string[];
+  binaryFallback?: { binary: string; args: string[]; requires: string[] };
+  optional?: boolean;
+}
+
+interface VerificationTarget {
+  name: string;
+  directory: string;
+  scripts: Record<string, string>;
+}
+
+type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
+const BASE_STEPS: StepDefinition[] = [
+  {
+    name: "typecheck",
+    scripts: ["typecheck", "type-check"],
+    binaryFallback: { binary: "tsc", args: ["--noEmit"], requires: ["tsconfig.json"] },
+  },
+  { name: "lint", scripts: ["lint"] },
+  { name: "test", scripts: ["test", "tests"] },
+];
+
+const BUILD_STEP: StepDefinition = { name: "build", scripts: ["build"], optional: true };
+
+const OUTPUT_LIMIT = 200_000;
+const DETAIL_LIMIT = 1_500;
+
+interface RunResult {
+  code: number | null;
+  timedOut: boolean;
+  output: string;
+  durationMs: number;
+}
+
+export async function runVerification(options: VerificationOptions): Promise<VerificationResult> {
+  const workspacePath = path.resolve(options.workspacePath);
+  const timeoutMs = options.timeoutMs ?? 180_000;
+  const checks: EvaluationCheck[] = [];
+  const ran: string[] = [];
+  const skipped: string[] = [];
+
+  const record = async (check: EvaluationCheck) => {
+    checks.push(check);
+    if (options.onCheck) await options.onCheck(check);
+  };
+
+  const manager = await detectPackageManager(workspacePath);
+  const targets = await resolveTargets(workspacePath, options.changedFiles);
+  if (targets.length === 0) {
+    await record({
+      name: "verification",
+      status: "passed",
+      details: "No package.json found for the changed files; typecheck/lint/test not applicable for standalone files",
+    });
+    return { checks, ran, skipped };
+  }
+
+  // A task worktree has no node_modules of its own: reuse the main
+  // checkout's before any step runs (live test 4: TS2688 in the worktree).
+  const linkedDependencies = await ensureWorktreeDependencies(
+    workspacePath,
+    targets.map((target) => target.directory)
+  );
+
+  const steps = options.includeBuild === false ? BASE_STEPS : [...BASE_STEPS, BUILD_STEP];
+
+  // Baseline tree, created on the first failure that needs it and removed
+  // when this verification run ends.
+  const useBaseline = options.baseline ?? baselineEnabled();
+  let baselineTree: BaselineTree | null | undefined;
+  const baselineFor = async (command: string, cwd: string): Promise<BaselineRun | null> => {
+    if (!useBaseline || options.signal?.aborted) return null;
+    const changed = options.changedFiles ?? [];
+    const key = await baselineCacheKey({ workspacePath, changedFiles: changed, command, cwd });
+    if (!key) return null;
+    const cached = cachedBaseline(key);
+    if (cached) return cached;
+    if (baselineTree === undefined) {
+      baselineTree = await createBaselineTree({
+        workspacePath,
+        changedFiles: changed,
+        packageDirs: targets.map((target) => path.relative(workspacePath, target.directory) || "."),
+      });
+    }
+    if (!baselineTree) return null;
+    const run = await runCommand(command, baselineTree.dirFor(cwd), timeoutMs, options.signal);
+    if (run.timedOut || options.signal?.aborted) return null;
+    const result = { code: run.code, output: baselineTree.normalizeOutput(run.output) };
+    storeBaseline(key, result);
+    return result;
+  };
+
+  try {
+    for (const target of targets) {
+      for (const step of steps) {
+        if (options.signal?.aborted) {
+          await record({
+            name: "verification",
+            status: "inconclusive",
+            details: "Verification aborted: the task was cancelled or timed out",
+          });
+          return finish(checks, ran, skipped, linkedDependencies);
+        }
+        const command = await buildCommand(step, workspacePath, target, manager);
+        if (!command) {
+          skipped.push(`${target.name}:${step.name}`);
+          continue;
+        }
+
+        const result = await runCommand(command, target.directory, timeoutMs, options.signal);
+        ran.push(`${target.name}:${step.name}`);
+
+        if (result.timedOut) {
+          await record({
+            name: `${target.name}:${step.name}`,
+            status: "failed",
+            durationMs: result.durationMs,
+            details: `\`${command}\` timed out after ${Math.round(timeoutMs / 1000)}s. ${tail(result.output)}`.trim(),
+          });
+          return finish(checks, ran, skipped, linkedDependencies);
+        }
+
+        const scope = options.scopeFiles ?? options.changedFiles ?? [];
+        const named = result.code !== 0 ? filesInOutput(result.output, workspacePath, target.directory) : [];
+        if (result.code !== 0) {
+          const heuristicPreExisting = SCOPED_STEPS.has(step.name) && isPreExistingFailure(named, scope);
+          if (!heuristicPreExisting) {
+            const classified = classifyVerifyFailure({ output: result.output, code: result.code, changedFiles: scope });
+            if (classified.kind === "env") {
+              // Nothing a code fix can change: report it as skipped and go on
+              // (the next steps may still run; they classify on their own).
+              await record({
+                name: `${target.name}:${step.name}`,
+                status: "inconclusive",
+                durationMs: result.durationMs,
+                environment: classified.reason,
+                details: `Skipped (environment): ${classified.reason}. \`${command}\` exited with code ${result.code}. ${tail(result.output)}`.trim(),
+              });
+              continue;
+            }
+          }
+
+          // R1: only failures that are new since the change count. The
+          // baseline also overrules the file-name heuristic: a change that
+          // breaks an untouched importer is new, not pre-existing.
+          const baseline = BASELINE_STEPS.has(step.name) ? await baselineFor(command, target.directory) : null;
+          if (baseline) {
+            const verdict = compareWithBaseline({
+              after: { code: result.code, output: result.output },
+              before: baseline,
+              root: workspacePath,
+              cwd: target.directory,
+            });
+            if (verdict.verdict === "pre_existing") {
+              await record({
+                name: `${target.name}:${step.name}`,
+                status: "passed",
+                durationMs: result.durationMs,
+                ...(named.length > 0 ? { files: named.slice(0, 20) } : {}),
+                details: `\`${command}\` failed, but the same failure${
+                  verdict.matched > 1 ? `s (${verdict.matched})` : ""
+                } already happen${verdict.matched > 1 ? "" : "s"} on the tree before this change (pre-existing, ignored)`,
+              });
+              continue;
+            }
+            if (verdict.verdict === "new") {
+              const fresh = verdict.newFailures;
+              await record({
+                ...(named.length > 0 ? { files: named.slice(0, 20) } : {}),
+                name: `${target.name}:${step.name}`,
+                status: "failed",
+                durationMs: result.durationMs,
+                details: `\`${command}\` exited with code ${result.code}.${
+                  fresh.length > 0
+                    ? ` New since this change (${fresh.length}): ${fresh.slice(0, 8).map(describeSignature).join("; ")}${fresh.length > 8 ? "; …" : ""}.`
+                    : ""
+                } ${tail(result.output)}`.trim(),
+              });
+              return finish(checks, ran, skipped, linkedDependencies);
+            }
+            // "unknown": nothing nameable and the outputs differ; fall through.
+          }
+
+          if (heuristicPreExisting) {
+            // Every file the failure names is outside this change: it existed
+            // before (e.g. a react-hooks lint error in an untouched component).
+            await record({
+              name: `${target.name}:${step.name}`,
+              status: "passed",
+              durationMs: result.durationMs,
+              files: named.slice(0, 20),
+              details: `\`${command}\` failed only in files this change did not touch (pre-existing, ignored): ${named.slice(0, 8).join(", ")}${named.length > 8 ? ", …" : ""}`,
+            });
+            continue;
+          }
+
+          await record({
+            ...(named.length > 0 ? { files: named.slice(0, 20) } : {}),
+            name: `${target.name}:${step.name}`,
+            status: "failed",
+            durationMs: result.durationMs,
+            details: `\`${command}\` exited with code ${result.code}. ${tail(result.output)}`.trim(),
+          });
+          return finish(checks, ran, skipped, linkedDependencies);
+        }
+
+        const counts = step.name === "test" ? parseTestCounts(result.output) : undefined;
+        await record({
+          name: `${target.name}:${step.name}`,
+          status: "passed",
+          durationMs: result.durationMs,
+          ...(counts ? { counts } : {}),
+          details: `\`${command}\` passed in ${(result.durationMs / 1000).toFixed(1)}s`,
+        });
+      }
+    }
+
+    if (ran.length === 0) {
+      await record({
+        name: "verification",
+        status: "inconclusive",
+        details: `No typecheck/lint/test scripts found (skipped: ${skipped.join(", ")})`,
+      });
+    }
+
+    return finish(checks, ran, skipped, linkedDependencies);
+  } finally {
+    if (baselineTree) await baselineTree.cleanup();
+  }
+}
+
+/** Steps whose failures are compared against the pre-change baseline (R1). */
+const BASELINE_STEPS = new Set(["typecheck", "lint", "test"]);
+
+/** Steps whose failures name files and can be scoped to the change. */
+const SCOPED_STEPS = new Set(["typecheck", "lint"]);
+
+const OUTPUT_PATH =
+  /(?:^|[\s"'`(])((?:[A-Za-z]:)?(?:\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w.@-]+\.(?:tsx?|jsx?|mjs|cjs|mts|cts|vue|svelte|css|scss))(?=$|[\s"'`):,]|\(\d)/gm;
+
+/**
+ * Workspace-relative source files a check's output names (tsc
+ * "src/a.ts(3,1): error", ESLint's absolute path headers), in order.
+ * Paths outside the workspace and node_modules are dropped.
+ */
+export function filesInOutput(output: string, workspacePath: string, cwd: string = workspacePath): string[] {
+  const root = path.resolve(workspacePath);
+  const files: string[] = [];
+  // npm/pnpm/yarn echo the script ("> app@1.0.0 lint", "> node scripts/lint.mjs"):
+  // the runner's own file is not a failing file (it made a script-only
+  // failure look pre-existing).
+  const body = output
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*>\s/.test(line) && !/^\s*\$\s/.test(line))
+    .join("\n");
+  for (const match of body.matchAll(OUTPUT_PATH)) {
+    const raw = match[1];
+    const absolute = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(cwd, raw);
+    if (absolute !== root && !absolute.startsWith(root + path.sep)) continue;
+    const rel = path.relative(root, absolute).replace(/\\/g, "/");
+    if (!rel || rel.split("/").includes("node_modules")) continue;
+    if (!files.includes(rel)) files.push(rel);
+  }
+  return files;
+}
+
+/** The failure names files, and none of them is in scope (an empty scope disables this). */
+export function isPreExistingFailure(named: string[], scope: string[]): boolean {
+  if (named.length === 0 || scope.length === 0) return false;
+  const inScope = new Set(scope.map((file) => file.replace(/\\/g, "/").replace(/^\.\//, "")));
+  return named.every((file) => !inScope.has(file));
+}
+
+async function finish(
+  checks: EvaluationCheck[],
+  ran: string[],
+  skipped: string[],
+  linkedDependencies?: string[]
+): Promise<VerificationResult> {
+  return { checks, ran, skipped, ...(linkedDependencies && linkedDependencies.length > 0 ? { linkedDependencies } : {}) };
+}
+
+async function resolveTargets(
+  workspacePath: string,
+  changedFiles: string[] | undefined
+): Promise<VerificationTarget[]> {
+  const rootPackage = await readPackage(path.join(workspacePath, "package.json"));
+  const targets = new Map<string, VerificationTarget>();
+
+  if (!changedFiles || changedFiles.length === 0) {
+    if (rootPackage) {
+      targets.set(workspacePath, {
+        name: rootPackage.name ?? "root",
+        directory: workspacePath,
+        scripts: rootPackage.scripts,
+      });
+    }
+    return Array.from(targets.values());
+  }
+
+  let needsRoot = false;
+  for (const file of changedFiles) {
+    const packageDir = await findPackageDir(workspacePath, file);
+    if (!packageDir || packageDir === workspacePath) {
+      needsRoot = true;
+      continue;
+    }
+    const pkg = await readPackage(path.join(packageDir, "package.json"));
+    if (!pkg) {
+      needsRoot = true;
+      continue;
+    }
+    targets.set(packageDir, {
+      name: pkg.name ?? path.relative(workspacePath, packageDir).replace(/\\/g, "/"),
+      directory: packageDir,
+      scripts: pkg.scripts,
+    });
+  }
+
+  if (needsRoot && rootPackage) {
+    targets.set(workspacePath, {
+      name: rootPackage.name ?? "root",
+      directory: workspacePath,
+      scripts: rootPackage.scripts,
+    });
+  }
+
+  return Array.from(targets.values());
+}
+
+async function findPackageDir(workspacePath: string, file: string): Promise<string | null> {
+  const root = path.resolve(workspacePath);
+  let dir = path.dirname(path.resolve(root, file));
+  while (dir === root || dir.startsWith(root + path.sep)) {
+    if (await exists(path.join(dir, "package.json"))) return dir;
+    if (dir === root) break;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+async function readPackage(
+  packageJsonPath: string
+): Promise<{ name?: string; scripts: Record<string, string> } | null> {
+  try {
+    const raw = await fs.readFile(packageJsonPath, "utf-8");
+    const parsed = JSON.parse(raw) as { name?: string; scripts?: Record<string, string> };
+    return { name: parsed.name, scripts: parsed.scripts ?? {} };
+  } catch {
+    return null;
+  }
+}
+
+async function detectPackageManager(workspacePath: string): Promise<PackageManager> {
+  const candidates: Array<[string, PackageManager]> = [
+    ["pnpm-lock.yaml", "pnpm"],
+    ["yarn.lock", "yarn"],
+    ["bun.lockb", "bun"],
+    ["bun.lock", "bun"],
+    ["package-lock.json", "npm"],
+  ];
+  for (const [file, manager] of candidates) {
+    if (await exists(path.join(workspacePath, file))) return manager;
+  }
+  return "npm";
+}
+
+async function buildCommand(
+  step: StepDefinition,
+  workspacePath: string,
+  target: VerificationTarget,
+  manager: PackageManager
+): Promise<string | null> {
+  for (const name of step.scripts) {
+    if (typeof target.scripts[name] === "string") return `${manager} run ${name}`;
+  }
+
+  const fallback = step.binaryFallback;
+  if (!fallback) return null;
+
+  const required = await Promise.all(
+    fallback.requires.map((file) => exists(path.join(target.directory, file)))
+  );
+  if (!required.every(Boolean)) return null;
+
+  const binary = await resolveLocalBinary(workspacePath, target.directory, fallback.binary);
+  if (!binary) return null;
+  return `"${binary}" ${fallback.args.join(" ")}`;
+}
+
+async function resolveLocalBinary(
+  workspacePath: string,
+  targetDir: string,
+  binary: string
+): Promise<string | null> {
+  const executable = process.platform === "win32" ? `${binary}.cmd` : binary;
+  const candidates = [
+    path.join(targetDir, "node_modules", ".bin", executable),
+    path.join(workspacePath, "node_modules", ".bin", executable),
+  ];
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+function runCommand(
+  command: string,
+  cwd: string,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<RunResult> {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    let output = "";
+    let timedOut = false;
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    // Assigned once the child exists; finishRun detaches it either way.
+    let onAbort: () => void = () => undefined;
+
+    const finishRun = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      // L2: step output lands in events and chat: mask secrets first.
+      resolve({ code, timedOut, output: redactText(output), durationMs: Date.now() - started });
+    };
+
+    let child: ChildProcess;
+    try {
+      child = spawn(command, {
+        cwd,
+        shell: true,
+        windowsHide: true,
+        detached: process.platform !== "win32",
+        env: buildChildEnv({ CI: "1", NO_COLOR: "1", FORCE_COLOR: "0" }),
+      });
+    } catch (error) {
+      output = error instanceof Error ? error.message : String(error);
+      finishRun(null);
+      return;
+    }
+
+    // Task cancellation kills the step's whole process tree, exactly
+    // like the step timeout does (Phase 4).
+    onAbort = () => {
+      output += "\nVerification step aborted";
+      killTree(child);
+    };
+    if (signal?.aborted) {
+      onAbort();
+    } else {
+      signal?.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const append = (chunk: Buffer | string) => {
+      if (output.length >= OUTPUT_LIMIT) return;
+      output += chunk.toString();
+    };
+    child.stdout?.on("data", append);
+    child.stderr?.on("data", append);
+
+    timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child);
+    }, timeoutMs);
+
+    child.on("error", (error) => {
+      output += `\n${error instanceof Error ? error.message : String(error)}`;
+      finishRun(null);
+    });
+    child.on("close", (code) => finishRun(code));
+  });
+}
+
+/**
+ * Kill a child process AND its whole process tree: on POSIX the child
+ * must have been spawned `detached` (its own process group), and the
+ * group is SIGKILLed; on Windows `taskkill /T /F` walks the tree.
+ * Exported for the QA runner (execution/qa.ts), whose dev server spawns
+ * grandchildren (package-manager shims, watcher processes) that a plain
+ * child.kill() would orphan (Phase 4 hardening).
+ */
+export function killTree(child: ChildProcess) {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+
+async function exists(target: string): Promise<boolean> {
+  try {
+    await fs.access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tail(text: string, limit = DETAIL_LIMIT): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  return trimmed.length <= limit ? trimmed : `...${trimmed.slice(-limit)}`;
+}
+
+/**
+ * Test counts from common runner summaries (vitest, jest, node:test,
+ * mocha). Returns undefined when the output has no recognisable summary —
+ * the card then shows the step result without counts, never a guess.
+ */
+export function parseTestCounts(output: string): { passed: number; total: number } | undefined {
+  const text = output.replace(/\u001b\[[0-9;]*m/g, "");
+  // vitest: "Tests  9 passed (9)" / "Tests  1 failed | 8 passed (9)"
+  const vitest = /Tests\s+(?:\d+\s+\w+\s+\|\s+)*(\d+)\s+passed[^(\n]*\((\d+)\)/.exec(text);
+  if (vitest) return { passed: Number(vitest[1]), total: Number(vitest[2]) };
+  // jest: "Tests:       9 passed, 9 total"
+  const jest = /Tests:\s+(?:\d+\s+\w+,\s+)*(\d+)\s+passed,.*?(\d+)\s+total/.exec(text);
+  if (jest) return { passed: Number(jest[1]), total: Number(jest[2]) };
+  // node:test: "# pass 9" + "# tests 9"
+  const nodePass = /^# pass (\d+)/m.exec(text);
+  const nodeTotal = /^# tests (\d+)/m.exec(text);
+  if (nodePass && nodeTotal) return { passed: Number(nodePass[1]), total: Number(nodeTotal[1]) };
+  // mocha: "9 passing"
+  const mocha = /^\s*(\d+) passing/m.exec(text);
+  if (mocha) {
+    const failing = /^\s*(\d+) failing/m.exec(text);
+    const passed = Number(mocha[1]);
+    return { passed, total: passed + (failing ? Number(failing[1]) : 0) };
+  }
+  return undefined;
+}

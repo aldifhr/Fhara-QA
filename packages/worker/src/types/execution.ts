@@ -1,0 +1,28 @@
+/** Verification / evaluation results shared by execution and the orchestrator. */
+
+export type EvaluationVerdict = "passed" | "failed" | "inconclusive";
+
+export interface EvaluationCheck {
+  name: string;
+  status: EvaluationVerdict;
+  details?: string;
+  /** Wall time of the step, when it ran (plan 019 verification card). */
+  durationMs?: number;
+  /** Test counts parsed from the runner output, when it printed them. */
+  counts?: { passed: number; total: number };
+  /**
+   * Workspace-relative files a failed typecheck/lint output names, so a
+   * finding is attributed to the right file (never just the first changed one).
+   */
+  files?: string[];
+  /**
+   * Set when the step failed for an ENVIRONMENT reason (missing
+   * dependencies / type packages / binaries), not because of the code:
+   * the check is reported as skipped (status "inconclusive") with this
+   * reason, and no fixer is spawned for it.
+   */
+  environment?: string;
+}
+
+/** Review verdicts as parsed from the reviewer agent. */
+export type { ReviewFinding, ReviewResult } from "@/utils/json";
